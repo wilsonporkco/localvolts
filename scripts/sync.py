@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
-Localvolts → Supabase daily sync script.
-Fetches historical data in 24hr chunks going backwards from now.
-The API constraint: to - from <= 24hrs, and from >= now - 72hrs.
+Localvolts → Supabase sync script.
+
+The Localvolts API default (no from/to) returns:
+  - Current NEM interval
+  - All intervals up to 24hrs ahead (forecasts)
+  - These update every 5 minutes
+
+Strategy: fetch without date params every 30-60 minutes.
+As time passes, forecast intervals become actuals and get updated.
+Upsert handles duplicates so re-fetching is safe.
+
+For historical backfill, the API supports from/to but:
+  - Max 24hr window
+  - Max 72hrs in the past from NOW (not from 'to')
+  - 'to' must be <= now (cannot be in future for historical calls)
 """
 
 import os
@@ -15,15 +27,18 @@ LV_PARTNER   = os.environ["LV_PARTNER"]
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 LV_NMI       = os.environ.get("LV_NMI", "*")
-HOURS_BACK   = int(os.environ.get("LV_HOURS_BACK", "26"))
+HOURS_BACK   = int(os.environ.get("LV_HOURS_BACK", "0"))  # 0 = default fetch (current + 24hr forecast)
 
 LV_BASE = "https://api.localvolts.com/v1"
 
-def lv_fetch(from_dt, to_dt):
-    # Build query string manually — urllib encodes colons which breaks the API
-    qs = f"NMI={LV_NMI}&from={from_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}&to={to_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+def lv_fetch(from_dt=None, to_dt=None):
+    qs = f"NMI={LV_NMI}"
+    if from_dt:
+        qs += f"&from={from_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    if to_dt:
+        qs += f"&to={to_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     url = f"{LV_BASE}/customer/interval?{qs}"
-    print(f"    URL: {url}")
+    print(f"    Fetching: {url}")
     req = urllib.request.Request(url, headers={
         "Authorization": f"apikey {LV_API_KEY}",
         "partner":       LV_PARTNER,
@@ -110,37 +125,56 @@ def supabase_upsert(rows):
 
 def main():
     now = datetime.now(timezone.utc)
-    print(f"[{now.isoformat()}] Starting sync — {HOURS_BACK}hrs back, NMI={LV_NMI}")
+    print(f"[{now.isoformat()}] Starting sync, NMI={LV_NMI}, HOURS_BACK={HOURS_BACK}")
 
-    # Build chunks from oldest to newest
-    # Each chunk is 24hrs, ending at now, now-24h, now-48h etc
-    # But to must not exceed now, so cap all chunk_to at now
     all_rows = []
-    chunks = max(1, (HOURS_BACK + 23) // 24)
 
-    # Start from the oldest point and work forward
-    oldest = now - timedelta(hours=HOURS_BACK)
-    for i in range(chunks):
-        chunk_from = oldest + timedelta(hours=i * 24)
-        chunk_to   = min(chunk_from + timedelta(hours=24), now)
-        if chunk_from >= now:
-            break
-
-        print(f"  Chunk {i+1}/{chunks}: {chunk_from.strftime('%Y-%m-%dT%H:%MZ')} → {chunk_to.strftime('%Y-%m-%dT%H:%MZ')}")
+    if HOURS_BACK == 0:
+        # Default: fetch current interval + 24hr forecast (no date params)
+        print("  Mode: default fetch (current + 24hr forecast)")
         try:
-            raw = lv_fetch(chunk_from, chunk_to)
+            raw = lv_fetch()
             if raw and isinstance(raw[0], dict) and 'error' in raw[0]:
-                print(f"    API error: {raw[0]['error']}")
-                continue
-            print(f"    Got {len(raw)} intervals")
-            if raw:
-                r = raw[0]
-                print(f"    Sample: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')}")
+                print(f"  API error: {raw[0]['error']}")
+                return
             valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd")]
-            print(f"    Valid: {len(valid)}")
+            print(f"  Got {len(raw)} intervals, {len(valid)} valid")
+            if valid:
+                print(f"  Quality breakdown: Act={sum(1 for r in valid if r.get('quality')=='Act')} Exp={sum(1 for r in valid if r.get('quality')=='Exp')} Fcst={sum(1 for r in valid if r.get('quality')=='Fcst')}")
             all_rows.extend(valid)
         except Exception as e:
-            print(f"    ERROR: {e}")
+            print(f"  ERROR: {e}")
+            return
+    else:
+        # Historical: fetch in 24hr chunks, each chunk ending at most at now
+        # from must be >= now - 72hrs
+        max_back = min(HOURS_BACK, 72)
+        oldest_from = now - timedelta(hours=max_back)
+        chunks = max(1, (max_back + 23) // 24)
+        print(f"  Mode: historical, {max_back}hrs back in {chunks} chunks")
+
+        for i in range(chunks):
+            chunk_from = oldest_from + timedelta(hours=i * 24)
+            chunk_to   = chunk_from + timedelta(hours=24)
+            # Cap to at now - 5min to avoid future data rejection
+            chunk_to = min(chunk_to, now - timedelta(minutes=5))
+            if chunk_from >= now:
+                break
+
+            print(f"  Chunk {i+1}/{chunks}: {chunk_from.strftime('%Y-%m-%dT%H:%MZ')} → {chunk_to.strftime('%Y-%m-%dT%H:%MZ')}")
+            try:
+                raw = lv_fetch(chunk_from, chunk_to)
+                if raw and isinstance(raw[0], dict) and 'error' in raw[0]:
+                    print(f"    API error: {raw[0]['error']}")
+                    continue
+                valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd")]
+                print(f"    Got {len(raw)} intervals, {len(valid)} valid")
+                if valid:
+                    r = valid[0]
+                    print(f"    Sample: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')}")
+                all_rows.extend(valid)
+            except Exception as e:
+                print(f"    ERROR: {e}")
 
     if not all_rows:
         print("No rows to save. Exiting.")
