@@ -1,0 +1,41 @@
+name: Daily Localvolts sync
+
+on:
+  schedule:
+    # Runs at 2:00 AM AEST every day (4:00 PM UTC)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    # Also allows manual trigger from GitHub Actions tab
+    inputs:
+      hours_back:
+        description: 'Hours of history to fetch (max 72)'
+        required: false
+        default: '26'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run sync
+        env:
+          LV_API_KEY:    ${{ secrets.LV_API_KEY }}
+          LV_PARTNER:    ${{ secrets.LV_PARTNER }}
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          LV_NMI:        "*"
+          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '26' }}
+        run: python scripts/sync.py
+
+      - name: Report status
+        if: always()
+        run: echo "Sync completed at $(date -u)"
