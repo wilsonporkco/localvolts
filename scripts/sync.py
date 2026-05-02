@@ -1,18 +1,6 @@
 #!/usr/bin/env python3
 """
 Localvolts → Supabase daily sync script.
-Fetches up to 72 hours of interval data and upserts into Supabase.
-Runs via GitHub Actions on a schedule, or manually.
-
-Environment variables required:
-  LV_API_KEY       Localvolts API key
-  LV_PARTNER       Localvolts partner ID
-  SUPABASE_URL     Your Supabase project URL (https://xxxx.supabase.co)
-  SUPABASE_KEY     Your Supabase service_role key (not anon key)
-
-Optional:
-  LV_NMI           NMI to fetch (default: *)
-  LV_HOURS_BACK    How many hours back to fetch (default: 26, max: 72)
 """
 
 import os
@@ -21,7 +9,6 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 
-# ── Config ────────────────────────────────────────────────────────────────────
 LV_API_KEY   = os.environ["LV_API_KEY"]
 LV_PARTNER   = os.environ["LV_PARTNER"]
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
@@ -31,9 +18,7 @@ HOURS_BACK   = int(os.environ.get("LV_HOURS_BACK", "26"))
 
 LV_BASE = "https://api.localvolts.com/v1"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def lv_fetch(from_dt: datetime, to_dt: datetime) -> list:
-    """Fetch a single 24hr chunk from Localvolts."""
+def lv_fetch(from_dt, to_dt):
     params = {
         "NMI": LV_NMI,
         "from": from_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -48,43 +33,34 @@ def lv_fetch(from_dt: datetime, to_dt: datetime) -> list:
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())
 
-
-def to_kwh(val, unit: str) -> float:
-    if val is None or val == "N/A":
-        return None
+def to_kwh(val, unit):
+    if val is None or val == "N/A": return None
     n = float(val)
     u = (unit or "").lower().strip()
     if u == "wh":  return n / 1000
     if u == "mwh": return n * 1000
-    return n  # kWh
+    return n
 
-
-def to_cents(val, unit: str) -> float:
-    if val is None or val == "N/A":
-        return None
+def to_cents(val, unit):
+    if val is None or val == "N/A": return None
     n = float(val)
     u = (unit or "").lower().strip()
     if u in ("$", "aud", "dollars"): return n * 100
-    return n  # cents
+    return n
 
-
-def to_grams(val, unit: str) -> float:
-    if val is None or val == "N/A":
-        return None
+def to_grams(val, unit):
+    if val is None or val == "N/A": return None
     n = float(val)
     u = (unit or "").lower()
     if "kg" in u: return n * 1000
-    return n  # grams
+    return n
 
-
-def safe_float(val) -> float:
+def safe_float(val):
     if val is None or val == "N/A": return None
     try: return float(val)
     except: return None
 
-
-def transform(r: dict) -> dict:
-    """Convert raw API record to database row."""
+def transform(r):
     return {
         "nmi":                  r.get("NMI"),
         "interval_end":         r.get("intervalEnd"),
@@ -113,38 +89,33 @@ def transform(r: dict) -> dict:
         "raw":                  json.dumps(r),
     }
 
-
-def supabase_upsert(rows: list) -> dict:
-    """Upsert rows into Supabase via REST API."""
+def supabase_upsert(rows):
     url = f"{SUPABASE_URL}/rest/v1/lv_intervals"
     payload = json.dumps(rows).encode()
     req = urllib.request.Request(
-        url,
-        data=payload,
+        url, data=payload,
         headers={
-            "apikey":          SUPABASE_KEY,
-            "Authorization":   f"Bearer {SUPABASE_KEY}",
-            "Content-Type":    "application/json",
-            "Prefer":          "resolution=merge-duplicates,return=minimal",
+            "apikey":        SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type":  "application/json",
+            "Prefer":        "resolution=merge-duplicates,return=minimal",
         },
         method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            body = resp.read()
-            return {"status": resp.status, "body": body.decode()[:200]}
+            return {"status": resp.status}
     except urllib.error.HTTPError as e:
         body = e.read().decode()
         raise RuntimeError(f"Supabase error {e.code}: {body[:300]}")
 
-
-# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     now = datetime.now(timezone.utc)
     print(f"[{now.isoformat()}] Starting sync — {HOURS_BACK}hrs back, NMI={LV_NMI}")
 
-    # Fetch in 24hr chunks (API limit)
     all_rows = []
+    # Fetch in 24hr chunks going backwards from now
+    # Each chunk: to = now - i*24hrs, from = to - 24hrs
     chunks = max(1, (HOURS_BACK + 23) // 24)
     for i in range(chunks):
         chunk_to   = now - timedelta(hours=i * 24)
@@ -152,10 +123,12 @@ def main():
         print(f"  Fetching chunk {i+1}/{chunks}: {chunk_from.strftime('%Y-%m-%dT%H:%MZ')} → {chunk_to.strftime('%Y-%m-%dT%H:%MZ')}")
         try:
             raw = lv_fetch(chunk_from, chunk_to)
-            # Only save actuals and expected (not pure forecasts)
-            actual = [r for r in raw if r.get("quality") in ("Act", "Exp")]
-            print(f"    Got {len(raw)} intervals, {len(actual)} actual/expected")
-            all_rows.extend(actual)
+            print(f"    Got {len(raw)} intervals total")
+            print(f"    Quality breakdown: { {q: sum(1 for r in raw if r.get('quality')==q) for q in ['Act','Exp','Fcst']} }")
+            # Save ALL intervals (Act, Exp, and Fcst) — filter in dashboard
+            valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd")]
+            print(f"    Saving {len(valid)} valid intervals")
+            all_rows.extend(valid)
         except Exception as e:
             print(f"    WARNING: chunk failed — {e}")
 
@@ -163,13 +136,9 @@ def main():
         print("No rows to save. Exiting.")
         return
 
-    # Transform and deduplicate
     transformed = [transform(r) for r in all_rows]
-    # Remove rows with no interval_end or nmi
-    transformed = [r for r in transformed if r["nmi"] and r["interval_end"]]
     print(f"  Upserting {len(transformed)} rows to Supabase...")
 
-    # Upsert in batches of 500
     batch_size = 500
     for i in range(0, len(transformed), batch_size):
         batch = transformed[i:i+batch_size]
@@ -177,7 +146,6 @@ def main():
         print(f"    Batch {i//batch_size + 1}: HTTP {result['status']}")
 
     print(f"  Done. {len(transformed)} rows saved.")
-
 
 if __name__ == "__main__":
     main()
