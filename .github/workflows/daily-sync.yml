@@ -1,16 +1,15 @@
-name: Daily Localvolts sync
+name: Localvolts sync
 
 on:
   schedule:
-    # Runs at 2:00 AM AEST every day (4:00 PM UTC)
-    - cron: '0 * * * *'
+    # Run every 30 minutes — captures intervals as they become actuals
+    - cron: '*/30 * * * *'
   workflow_dispatch:
-    # Also allows manual trigger from GitHub Actions tab
     inputs:
       hours_back:
-        description: 'Hours of history to fetch (max 72)'
+        description: 'Hours of history to fetch (0=default fetch, max 72 for historical)'
         required: false
-        default: '26'
+        default: '0'
 
 jobs:
   sync:
@@ -33,7 +32,7 @@ jobs:
           SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
           LV_NMI:        "*"
-          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '26' }}
+          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '0' }}
         run: python scripts/sync.py
 
       - name: Report status
