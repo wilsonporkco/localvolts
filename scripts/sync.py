@@ -6,7 +6,6 @@ Localvolts → Supabase daily sync script.
 import os
 import json
 import urllib.request
-import urllib.parse
 from datetime import datetime, timezone, timedelta
 
 LV_API_KEY   = os.environ["LV_API_KEY"]
@@ -19,12 +18,14 @@ HOURS_BACK   = int(os.environ.get("LV_HOURS_BACK", "26"))
 LV_BASE = "https://api.localvolts.com/v1"
 
 def lv_fetch(from_dt=None, to_dt=None):
-    params = {"NMI": LV_NMI}
+    # Build URL manually — urllib.parse.urlencode encodes colons in timestamps
+    # which breaks the Localvolts API. Build the query string by hand.
+    qs = f"NMI={LV_NMI}"
     if from_dt:
-        params["from"] = from_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        qs += "&from=" + from_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     if to_dt:
-        params["to"] = to_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    url = f"{LV_BASE}/customer/interval?" + urllib.parse.urlencode(params)
+        qs += "&to=" + to_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = f"{LV_BASE}/customer/interval?{qs}"
     print(f"    URL: {url}")
     req = urllib.request.Request(url, headers={
         "Authorization": f"apikey {LV_API_KEY}",
@@ -32,8 +33,7 @@ def lv_fetch(from_dt=None, to_dt=None):
         "User-Agent":    "LocalvoltsSync/1.0",
     })
     with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
-        return data
+        return json.loads(resp.read())
 
 def to_kwh(val, unit):
     if val is None or val == "N/A": return None
@@ -115,19 +115,6 @@ def main():
     now = datetime.now(timezone.utc)
     print(f"[{now.isoformat()}] Starting sync — {HOURS_BACK}hrs back, NMI={LV_NMI}")
 
-    # First: fetch with no date params to see what the API returns normally
-    print("\n--- Testing default fetch (no date params) ---")
-    try:
-        default = lv_fetch()
-        print(f"  Got {len(default)} intervals")
-        if default:
-            r = default[0]
-            print(f"  First interval: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')}")
-            print(f"  imports={r.get('importsAll')} {r.get('importsAllUnits')}")
-    except Exception as e:
-        print(f"  Error: {e}")
-
-    print("\n--- Fetching historical chunks ---")
     all_rows = []
     chunks = max(1, (HOURS_BACK + 23) // 24)
     for i in range(chunks):
@@ -137,27 +124,26 @@ def main():
         try:
             raw = lv_fetch(chunk_from, chunk_to)
             print(f"    Got {len(raw)} intervals")
-            if raw:
+            if raw and raw[0].get("NMI"):
                 r = raw[0]
-                print(f"    Sample: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')} imports={r.get('importsAll')} {r.get('importsAllUnits')}")
-                # Print raw first record to diagnose
-                print(f"    Raw keys: {list(r.keys())}")
+                print(f"    Sample: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')}")
+            elif raw:
+                print(f"    First record keys: {list(raw[0].keys())} value: {raw[0]}")
             valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd")]
-            print(f"    Valid (have NMI+intervalEnd): {len(valid)}")
+            print(f"    Valid: {len(valid)}")
             all_rows.extend(valid)
         except Exception as e:
             print(f"    ERROR: {e}")
 
     if not all_rows:
-        print("\nNo rows to save. Exiting.")
+        print("No rows to save. Exiting.")
         return
 
     transformed = [transform(r) for r in all_rows]
-    print(f"\n  Upserting {len(transformed)} rows to Supabase...")
+    print(f"  Upserting {len(transformed)} rows to Supabase...")
     batch_size = 500
     for i in range(0, len(transformed), batch_size):
-        batch = transformed[i:i+batch_size]
-        result = supabase_upsert(batch)
+        result = supabase_upsert(transformed[i:i+batch_size])
         print(f"    Batch {i//batch_size + 1}: HTTP {result['status']}")
     print(f"  Done. {len(transformed)} rows saved.")
 
