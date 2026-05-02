@@ -18,20 +18,22 @@ HOURS_BACK   = int(os.environ.get("LV_HOURS_BACK", "26"))
 
 LV_BASE = "https://api.localvolts.com/v1"
 
-def lv_fetch(from_dt, to_dt):
-    params = {
-        "NMI": LV_NMI,
-        "from": from_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "to":   to_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
+def lv_fetch(from_dt=None, to_dt=None):
+    params = {"NMI": LV_NMI}
+    if from_dt:
+        params["from"] = from_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    if to_dt:
+        params["to"] = to_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     url = f"{LV_BASE}/customer/interval?" + urllib.parse.urlencode(params)
+    print(f"    URL: {url}")
     req = urllib.request.Request(url, headers={
         "Authorization": f"apikey {LV_API_KEY}",
         "partner":       LV_PARTNER,
         "User-Agent":    "LocalvoltsSync/1.0",
     })
     with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+        data = json.loads(resp.read())
+        return data
 
 def to_kwh(val, unit):
     if val is None or val == "N/A": return None
@@ -113,38 +115,50 @@ def main():
     now = datetime.now(timezone.utc)
     print(f"[{now.isoformat()}] Starting sync — {HOURS_BACK}hrs back, NMI={LV_NMI}")
 
+    # First: fetch with no date params to see what the API returns normally
+    print("\n--- Testing default fetch (no date params) ---")
+    try:
+        default = lv_fetch()
+        print(f"  Got {len(default)} intervals")
+        if default:
+            r = default[0]
+            print(f"  First interval: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')}")
+            print(f"  imports={r.get('importsAll')} {r.get('importsAllUnits')}")
+    except Exception as e:
+        print(f"  Error: {e}")
+
+    print("\n--- Fetching historical chunks ---")
     all_rows = []
-    # Fetch in 24hr chunks going backwards from now
-    # Each chunk: to = now - i*24hrs, from = to - 24hrs
     chunks = max(1, (HOURS_BACK + 23) // 24)
     for i in range(chunks):
         chunk_to   = now - timedelta(hours=i * 24)
         chunk_from = chunk_to - timedelta(hours=24)
-        print(f"  Fetching chunk {i+1}/{chunks}: {chunk_from.strftime('%Y-%m-%dT%H:%MZ')} → {chunk_to.strftime('%Y-%m-%dT%H:%MZ')}")
+        print(f"  Chunk {i+1}/{chunks}: {chunk_from.strftime('%Y-%m-%dT%H:%MZ')} → {chunk_to.strftime('%Y-%m-%dT%H:%MZ')}")
         try:
             raw = lv_fetch(chunk_from, chunk_to)
-            print(f"    Got {len(raw)} intervals total")
-            print(f"    Quality breakdown: { {q: sum(1 for r in raw if r.get('quality')==q) for q in ['Act','Exp','Fcst']} }")
-            # Save ALL intervals (Act, Exp, and Fcst) — filter in dashboard
+            print(f"    Got {len(raw)} intervals")
+            if raw:
+                r = raw[0]
+                print(f"    Sample: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')} imports={r.get('importsAll')} {r.get('importsAllUnits')}")
+                # Print raw first record to diagnose
+                print(f"    Raw keys: {list(r.keys())}")
             valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd")]
-            print(f"    Saving {len(valid)} valid intervals")
+            print(f"    Valid (have NMI+intervalEnd): {len(valid)}")
             all_rows.extend(valid)
         except Exception as e:
-            print(f"    WARNING: chunk failed — {e}")
+            print(f"    ERROR: {e}")
 
     if not all_rows:
-        print("No rows to save. Exiting.")
+        print("\nNo rows to save. Exiting.")
         return
 
     transformed = [transform(r) for r in all_rows]
-    print(f"  Upserting {len(transformed)} rows to Supabase...")
-
+    print(f"\n  Upserting {len(transformed)} rows to Supabase...")
     batch_size = 500
     for i in range(0, len(transformed), batch_size):
         batch = transformed[i:i+batch_size]
         result = supabase_upsert(batch)
         print(f"    Batch {i//batch_size + 1}: HTTP {result['status']}")
-
     print(f"  Done. {len(transformed)} rows saved.")
 
 if __name__ == "__main__":
