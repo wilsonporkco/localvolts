@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Localvolts → Supabase daily sync script.
+Fetches historical data in 24hr chunks going backwards from now.
+The API constraint: to - from <= 24hrs, and from >= now - 72hrs.
 """
 
 import os
@@ -17,14 +19,9 @@ HOURS_BACK   = int(os.environ.get("LV_HOURS_BACK", "26"))
 
 LV_BASE = "https://api.localvolts.com/v1"
 
-def lv_fetch(from_dt=None, to_dt=None):
-    # Build URL manually — urllib.parse.urlencode encodes colons in timestamps
-    # which breaks the Localvolts API. Build the query string by hand.
-    qs = f"NMI={LV_NMI}"
-    if from_dt:
-        qs += "&from=" + from_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    if to_dt:
-        qs += "&to=" + to_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+def lv_fetch(from_dt, to_dt):
+    # Build query string manually — urllib encodes colons which breaks the API
+    qs = f"NMI={LV_NMI}&from={from_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}&to={to_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     url = f"{LV_BASE}/customer/interval?{qs}"
     print(f"    URL: {url}")
     req = urllib.request.Request(url, headers={
@@ -115,20 +112,30 @@ def main():
     now = datetime.now(timezone.utc)
     print(f"[{now.isoformat()}] Starting sync — {HOURS_BACK}hrs back, NMI={LV_NMI}")
 
+    # Build chunks from oldest to newest
+    # Each chunk is 24hrs, ending at now, now-24h, now-48h etc
+    # But to must not exceed now, so cap all chunk_to at now
     all_rows = []
     chunks = max(1, (HOURS_BACK + 23) // 24)
+
+    # Start from the oldest point and work forward
+    oldest = now - timedelta(hours=HOURS_BACK)
     for i in range(chunks):
-        chunk_to   = now - timedelta(hours=i * 24)
-        chunk_from = chunk_to - timedelta(hours=24)
+        chunk_from = oldest + timedelta(hours=i * 24)
+        chunk_to   = min(chunk_from + timedelta(hours=24), now)
+        if chunk_from >= now:
+            break
+
         print(f"  Chunk {i+1}/{chunks}: {chunk_from.strftime('%Y-%m-%dT%H:%MZ')} → {chunk_to.strftime('%Y-%m-%dT%H:%MZ')}")
         try:
             raw = lv_fetch(chunk_from, chunk_to)
+            if raw and isinstance(raw[0], dict) and 'error' in raw[0]:
+                print(f"    API error: {raw[0]['error']}")
+                continue
             print(f"    Got {len(raw)} intervals")
-            if raw and raw[0].get("NMI"):
+            if raw:
                 r = raw[0]
                 print(f"    Sample: NMI={r.get('NMI')} end={r.get('intervalEnd')} quality={r.get('quality')}")
-            elif raw:
-                print(f"    First record keys: {list(raw[0].keys())} value: {raw[0]}")
             valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd")]
             print(f"    Valid: {len(valid)}")
             all_rows.extend(valid)
