@@ -3,7 +3,7 @@ name: Daily Localvolts sync
 on:
   schedule:
     # Runs at 2:00 AM AEST every day (4:00 PM UTC)
-    - cron: '0 16 * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
     # Also allows manual trigger from GitHub Actions tab
     inputs:
