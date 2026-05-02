@@ -89,7 +89,8 @@ def transform(r):
     }
 
 def supabase_upsert(rows):
-    url = f"{SUPABASE_URL}/rest/v1/lv_intervals"
+    # Use on_conflict to upsert on nmi+interval_end unique key
+    url = f"{SUPABASE_URL}/rest/v1/lv_intervals?on_conflict=nmi,interval_end"
     payload = json.dumps(rows).encode()
     req = urllib.request.Request(url, data=payload, headers={
         "apikey": SUPABASE_KEY,
