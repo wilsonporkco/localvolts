@@ -3,8 +3,11 @@
 Localvolts → Supabase sync script.
 
 Two modes:
-  HOURS_BACK=0  : Default fetch (current + 24hr forecast). Run every 30 mins.
+  HOURS_BACK=0  : Default fetch (6hr lookback + 24hr forecast). Run every 30 mins.
   HOURS_BACK=N  : Historical backfill — loops day by day using AEST boundaries.
+
+Only 5-minute intervals are saved — 30-min intervals overlap with 5-min data
+and cause double-counting in the dashboard.
 """
 
 import os, json, urllib.request, urllib.parse, time
@@ -27,7 +30,6 @@ def lv_fetch(from_dt=None, to_dt=None):
     url = f"{LV_BASE}/customer/interval?{qs}"
     print(f"    GET {url}")
     req = urllib.request.Request(url, headers={
-        # Correct auth: "apikey <key>" not "Bearer <key>"
         "Authorization": f"apikey {LV_API_KEY}",
         "partner": LV_PARTNER,
         "User-Agent": "LocalvoltsSync/1.0",
@@ -89,7 +91,6 @@ def transform(r):
     }
 
 def supabase_upsert(rows):
-    # Use on_conflict to upsert on nmi+interval_end unique key
     url = f"{SUPABASE_URL}/rest/v1/lv_intervals?on_conflict=nmi,interval_end"
     payload = json.dumps(rows).encode()
     req = urllib.request.Request(url, data=payload, headers={
@@ -109,12 +110,20 @@ def fetch_and_save(from_dt=None, to_dt=None, label=""):
     if raw and isinstance(raw[0], dict) and "error" in raw[0]:
         print(f"    API error: {raw[0]['error']}")
         return 0
-    valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd")]
+
+    # Only keep 5-minute intervals — 30-min intervals overlap with 5-min data
+    # and cause double-counting when both exist for the same time period
+    valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd") and r.get("intervalDuration") != 30]
+
     qualities = {}
+    durations = {}
     for r in valid:
-        q = r.get("quality","?")
-        qualities[q] = qualities.get(q,0) + 1
-    print(f"    {len(raw)} total, {len(valid)} valid, quality={qualities} {label}")
+        q = r.get("quality", "?")
+        qualities[q] = qualities.get(q, 0) + 1
+        d = r.get("intervalDuration", "?")
+        durations[str(d)] = durations.get(str(d), 0) + 1
+    skipped = len(raw) - len(valid)
+    print(f"    {len(raw)} total, {len(valid)} kept ({skipped} 30-min skipped), quality={qualities}, duration={durations} {label}")
     if not valid: return 0
     rows = [transform(r) for r in valid]
     for i in range(0, len(rows), 500):
@@ -128,28 +137,25 @@ def main():
     total = 0
 
     if HOURS_BACK == 0:
-        # Live mode: no date params = current interval + 24hr forecast
-        print("  Mode: live fetch (current + 24hr forecast)")
-        total = fetch_and_save(label="(live)")
+        # Live mode: fetch last 6 hours of actuals + 24hr forecast
+        # Fetching recent history ensures actuals overwrite any stale forecast data
+        from_dt = now - timedelta(hours=6)
+        print(f"  Mode: live fetch (6hr lookback + forecast, from {from_dt.strftime('%H:%MZ')})")
+        total = fetch_and_save(from_dt=from_dt, label="(live+lookback)")
     else:
         # Historical: loop day by day using AEST midnight boundaries
-        # AEST = UTC+10, so AEST midnight 3 May = 2 May 14:00 UTC
         days = max(1, (HOURS_BACK + 23) // 24)
         print(f"  Mode: historical backfill — {days} AEST days")
 
         for i in range(days - 1, -1, -1):
-            # AEST date we want
             aest_date = (now + timedelta(hours=10)).date() - timedelta(days=i)
-            # Convert AEST midnight to UTC: subtract 10 hours
             from_utc = datetime(aest_date.year, aest_date.month, aest_date.day,
                                 0, 0, 0, tzinfo=timezone.utc) - timedelta(hours=10)
             to_utc   = from_utc + timedelta(hours=24)
 
-            # Skip future windows
             if from_utc >= now:
                 print(f"  Skipping future day {aest_date}")
                 continue
-            # Cap to now
             to_utc = min(to_utc, now)
 
             print(f"  Day {days-i}/{days}: AEST {aest_date} → UTC {from_utc.strftime('%H:%MZ')}–{to_utc.strftime('%H:%MZ')}")
@@ -157,7 +163,7 @@ def main():
                 saved = fetch_and_save(from_utc, to_utc, f"(AEST {aest_date})")
                 total += saved
                 if saved > 0:
-                    time.sleep(0.5)  # be polite to the API
+                    time.sleep(0.5)
             except Exception as e:
                 print(f"    ERROR: {e}")
 
