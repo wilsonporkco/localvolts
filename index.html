@@ -691,6 +691,13 @@ function fmt(v,dp) { dp=dp===undefined?2:dp; var n=safeNum(v); return n===null?'
 
 function toAEST(utcStr) { return new Date(new Date(utcStr).getTime()+10*3600000); }
 function isoDate(d) { return d.toISOString().slice(0,10); }
+// Returns today's midnight AEST as a UTC ISO string — used to allow today's Fcst
+// intervals through while blocking stale historical Fcst from old unsettled days.
+function todayAESTMidnightUTC() {
+  var nowAEST = new Date(Date.now()+10*3600000);
+  var aestDate = nowAEST.toISOString().slice(0,10);
+  return new Date(aestDate+'T00:00:00+10:00').toISOString().replace(/\.\d+Z$/,'Z');
+}
 function intLabel(utcStr) { if(!utcStr) return ''; var d=toAEST(new Date(utcStr)); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); }
 
 // Supabase query
@@ -1026,9 +1033,10 @@ async function loadWeekly() {
     // Cap to now — live sync stores ~18hrs of forecast data into the future;
     // capping prevents those intervals showing as an extra day in weekly view.
     var to=new Date(Math.min(toD.getTime(), Date.now())).toISOString().replace(/\.\d+Z$/,'Z');
-    // Exclude pure Fcst rows — they inflate day counts with stale/future data.
-    // This matches LocalVolts which only reports settled (Act) and estimated (Exp) data.
-    var rows=await sbQuery('lv_intervals',from,to,nmi,10000,'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,imports_emissions_g',['quality=neq.Fcst']);
+    // Keep today's Fcst (best available for unsettled intervals), but exclude Fcst
+    // from older days (stale data that can't be backfilled, e.g. beyond 72h API limit).
+    var rows=await sbQuery('lv_intervals',from,to,nmi,10000,'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,imports_emissions_g',
+      ['or=(quality.neq.Fcst,interval_end.gte.'+todayAESTMidnightUTC()+')']);
     if(!rows.length) throw new Error('No data for this week in Supabase yet.');
     csvData.weekly=rows; updateKnownNMIs(rows);
     var dm=aggregateDays(rows); var days=Object.keys(dm).sort();
@@ -1063,8 +1071,9 @@ async function loadMonthly() {
     var toEnd=new Date(nextYr+'-'+String(nextMo).padStart(2,'0')+'-01T00:00:00+10:00');
     // Cap to now — prevents future forecast intervals inflating monthly totals.
     var to=new Date(Math.min(toEnd.getTime(), Date.now())).toISOString().replace(/\.\d+Z$/,'Z');
-    // Exclude pure Fcst rows — stale forecast data inflates counts and totals.
-    var rows=await sbQuery('lv_intervals',from,to,nmi,50000,'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,imports_emissions_g',['quality=neq.Fcst']);
+    // Keep today's Fcst but exclude Fcst from older days (stale/unrecoverable data).
+    var rows=await sbQuery('lv_intervals',from,to,nmi,50000,'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,imports_emissions_g',
+      ['or=(quality.neq.Fcst,interval_end.gte.'+todayAESTMidnightUTC()+')']);
     if(!rows.length) throw new Error('No data for this month in Supabase yet.');
     csvData.monthly=rows; updateKnownNMIs(rows);
     var dm=aggregateDays(rows); var days=Object.keys(dm).sort();
