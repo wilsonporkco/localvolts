@@ -1,0 +1,32 @@
+name: Localvolts live sync
+
+on:
+  schedule:
+    # Every 30 minutes — keeps recent intervals fresh and captures actuals
+    # as they replace forecast data within the 6-hour lookback window
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run live sync (6hr lookback)
+        env:
+          LV_API_KEY:    ${{ secrets.LV_API_KEY }}
+          LV_PARTNER:    ${{ secrets.LV_PARTNER }}
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          LV_NMI:        "*"
+          LV_HOURS_BACK: "0"
+        run: python scripts/sync.py
