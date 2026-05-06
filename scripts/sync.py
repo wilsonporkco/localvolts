@@ -112,8 +112,18 @@ def fetch_and_save(from_dt=None, to_dt=None, label=""):
         return 0
 
     # Only keep 5-minute intervals — 30-min intervals overlap with 5-min data
-    # and cause double-counting when both exist for the same time period
-    valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd") and r.get("intervalDuration") != 30]
+    # and cause double-counting when both exist for the same time period.
+    # FIX: cast to int before comparing — the API may return intervalDuration as
+    # a string (e.g. "30"), and in Python "30" != 30 is True, so the filter
+    # would silently pass all 30-min intervals through.
+    def is_five_min(r):
+        dur = r.get("intervalDuration")
+        try:
+            return int(dur) != 30
+        except (TypeError, ValueError):
+            return True  # keep if duration is unknown
+
+    valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd") and is_five_min(r)]
 
     qualities = {}
     durations = {}
@@ -137,13 +147,13 @@ def main():
     total = 0
 
     if HOURS_BACK == 0:
-        # Live mode: fetch last 6 hours of actuals + 24hr forecast
-        # Fetching recent history ensures actuals overwrite any stale forecast data
+        # Live mode: fetch last 6 hours of actuals + 24hr forecast.
+        # Fetching recent history ensures actuals overwrite any stale forecast data.
         from_dt = now - timedelta(hours=6)
         print(f"  Mode: live fetch (6hr lookback + forecast, from {from_dt.strftime('%H:%MZ')})")
         total = fetch_and_save(from_dt=from_dt, label="(live+lookback)")
     else:
-        # Historical: loop day by day using AEST midnight boundaries
+        # Historical: loop day by day using AEST midnight boundaries.
         days = max(1, (HOURS_BACK + 23) // 24)
         print(f"  Mode: historical backfill — {days} AEST days")
 
