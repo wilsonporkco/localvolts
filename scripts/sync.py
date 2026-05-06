@@ -161,10 +161,17 @@ def main():
             aest_date = (now + timedelta(hours=10)).date() - timedelta(days=i)
             from_utc = datetime(aest_date.year, aest_date.month, aest_date.day,
                                 0, 0, 0, tzinfo=timezone.utc) - timedelta(hours=10)
-            to_utc   = from_utc + timedelta(hours=24)
+            # API limit: 'to - from' must be strictly less than 24 hours.
+            # Using 24h - 1s avoids the "cannot exceed 24 hours" rejection.
+            to_utc = from_utc + timedelta(hours=24, seconds=-1)
 
             if from_utc >= now:
                 print(f"  Skipping future day {aest_date}")
+                continue
+            # API limit: 'from' cannot be more than 72 hours in the past.
+            # Use 71h as a safe margin.
+            if now - from_utc > timedelta(hours=71):
+                print(f"  Skipping {aest_date} — beyond 72h API history limit")
                 continue
             to_utc = min(to_utc, now)
 
