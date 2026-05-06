@@ -1260,11 +1260,14 @@ async function checkLastSync() {
     return;
   }
   try {
-    var url = sbUrl + '/rest/v1/lv_intervals?select=inserted_at&order=inserted_at.desc&limit=1';
+    // Query the most recent interval_end up to now — this reflects actual sync
+    // freshness regardless of when rows were first inserted (upserts don't update inserted_at).
+    var nowIso = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    var url = sbUrl + '/rest/v1/lv_intervals?select=interval_end&interval_end=lte.' + nowIso + '&order=interval_end.desc&limit=1';
     var res = await fetch(url, { headers: { 'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey } });
     var data = await res.json();
     if (data && data.length > 0) {
-      var dt = new Date(data[0].inserted_at);
+      var dt = new Date(data[0].interval_end);
       var aest = new Date(dt.getTime() + 10*3600000);
       var timeStr = aest.toISOString().replace('T',' ').slice(0,16) + ' AEST';
       document.getElementById('last-sync-time').textContent = timeStr;
