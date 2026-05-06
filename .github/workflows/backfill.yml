@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       hours_back:
-        description: 'Hours of history to fetch (default 72 = 3 days)'
+        description: 'Hours of history to fetch (default 96 = 4 days, covers 72h API limit)'
         required: false
-        default: '72'
+        default: '96'
 
 jobs:
   backfill:
@@ -33,5 +33,5 @@ jobs:
           SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
           LV_NMI:        "*"
-          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '72' }}
+          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '96' }}
         run: python scripts/sync.py
