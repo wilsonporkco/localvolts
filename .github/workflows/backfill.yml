@@ -1,0 +1,37 @@
+name: Localvolts daily backfill
+
+on:
+  schedule:
+    # 6 AM UTC = 4 PM AEST — re-fetches last 3 days so that NEM-settled
+    # Act data overwrites any stale Fcst/Exp estimates in the DB
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      hours_back:
+        description: 'Hours of history to fetch (default 72 = 3 days)'
+        required: false
+        default: '72'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run backfill (72hr = 3 AEST days)
+        env:
+          LV_API_KEY:    ${{ secrets.LV_API_KEY }}
+          LV_PARTNER:    ${{ secrets.LV_PARTNER }}
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          LV_NMI:        "*"
+          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '72' }}
+        run: python scripts/sync.py
