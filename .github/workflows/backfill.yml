@@ -2,9 +2,9 @@ name: Localvolts daily backfill
 
 on:
   schedule:
-    # 6 AM UTC = 4 PM AEST — re-fetches last 3 days so that NEM-settled
+    # 0 AM UTC = 6 AM AEST — re-fetches last 3 days so that NEM-settled
     # Act data overwrites any stale Fcst/Exp estimates in the DB
-    - cron: '0 6 * * *'
+    - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
       hours_back:
