@@ -1333,7 +1333,7 @@ async function loadDaily() {
     var deduped = Object.values(byEnd);
     console.log('Rows returned:', rows.length, '→ after dedup:', deduped.length);
 
-    if(!deduped.length) throw new Error('No data for '+dv+'. Queried: '+range[0]+' → '+range[1]+' NMI='+(nmi==='*'?'all':nmi)+'. Check browser console for Supabase URL.');
+    if(!deduped.length) throw new Error('No data in Supabase for NMI '+(nmi==='*'?'any meter':nmi)+' on '+dv+'.\n\nThis NMI has not been synced yet. The sync script only stores data for NMIs returned by the configured LocalVolts API account. To get data for this NMI, run the sync script with the correct credentials for this meter.');
     updateKnownNMIs(deduped);
 
     // Apply time filter
