@@ -611,6 +611,12 @@ try { sbUrl = localStorage.getItem('lv_sb_url') || SB_URL_DEFAULT; } catch(e) {}
 try { sbKey = localStorage.getItem('lv_sb_key') || SB_KEY_DEFAULT; } catch(e) {}
 try { lvAccounts = JSON.parse(localStorage.getItem('lv_accounts') || '[]'); } catch(e) {}
 try { lvActiveIdx = parseInt(localStorage.getItem('lv_active_account') || '0', 10) || 0; } catch(e) {}
+try { knownNMIs = JSON.parse(localStorage.getItem('lv_known_nmis') || '[]'); } catch(e) {}
+// Seed the default Wilsons account if no accounts have been saved yet
+if (!lvAccounts.length) {
+  lvAccounts = [{ label: 'Wilsons', partner: '140046', apikey: 'e3c7ea100a1e29e297bfe71b8aa6c2da' }];
+  try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
+}
 
 function getActiveAccount() {
   if (!lvAccounts.length) return null;
@@ -806,7 +812,10 @@ function rebuildSelects() {
 function updateKnownNMIs(data) {
   var changed=false;
   data.forEach(function(d){ var n=d.NMI||d.nmi; if(n&&knownNMIs.indexOf(n)===-1){knownNMIs.push(n);changed=true;} });
-  if(changed) rebuildSelects();
+  if(changed) {
+    rebuildSelects();
+    try { localStorage.setItem('lv_known_nmis', JSON.stringify(knownNMIs)); } catch(e) {}
+  }
 }
 
 async function loadNMIsFromDB() {
@@ -1385,11 +1394,27 @@ async function testSupabase() {
   document.getElementById('monthly-month').value=y+'-'+m;
 })();
 
+// Restore known NMIs from cache immediately so selects are populated on load
+if (knownNMIs.length) rebuildSelects();
+
 loadLive();
 setInterval(loadLive, 5*60*1000);
 if (hasSB()) { loadNMIsFromDB().then(loadDaily); }
 checkLastSync();
 setInterval(checkLastSync, 60*1000);
+
+// Silently discover NMIs from all saved accounts in the background on startup
+(async function() {
+  await loadNMIsFromDB();
+  var accounts = lvAccounts.filter(function(a) { return a.apikey; });
+  for (var i = 0; i < accounts.length; i++) {
+    try {
+      var data = await apiFetchWithAccount({NMI: '*'}, accounts[i]);
+      if (Array.isArray(data) && data.length) updateKnownNMIs(data);
+    } catch(e) {}
+  }
+  rebuildSelects();
+})();
 
 // Auto-refresh daily tab every 5 mins if today is selected
 setInterval(function() {
