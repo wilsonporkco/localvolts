@@ -563,12 +563,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="saveAccounts()">Save accounts</button>
             <button class="btn btn-ghost" onclick="discoverNMIsFromAPI()">Discover NMIs</button>
+            <button class="btn btn-ghost" onclick="syncNow()">↕ Sync now</button>
             <span id="accounts-confirm" style="font-family:var(--mono);font-size:11px;color:var(--green);display:none;">Saved</span>
             <span id="nmi-discover-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);display:none;"></span>
           </div>
           <div class="settings-hint" style="margin-top:10px;">Active account:&nbsp;
             <select id="active-account-select" class="settings-input" style="width:auto;display:inline-block;" onchange="setActiveAccount(this.value)"></select>
           </div>
+          <div id="sync-status" style="margin-top:8px;font-family:var(--mono);font-size:11px;"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Meter names</div>
@@ -745,10 +747,19 @@ function setActiveAccount(idx) {
 function hasSB() { return !!(sbUrl && sbKey); }
 
 // ---- Cross-device settings sync via Supabase lv_settings table ----
+var SYNC_TABLE_SQL = 'CREATE TABLE IF NOT EXISTS lv_settings (\n  key text PRIMARY KEY,\n  value text NOT NULL,\n  updated_at timestamptz DEFAULT now()\n);\nALTER TABLE lv_settings ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "allow_all" ON lv_settings FOR ALL USING (true) WITH CHECK (true);';
+
+function setSyncStatus(msg, color) {
+  var el = document.getElementById('sync-status');
+  if (!el) return;
+  el.style.color = color || 'var(--text3)';
+  el.innerHTML = msg;
+}
+
 async function sbSettingsSave(key, value) {
-  if (!hasSB()) return;
+  if (!hasSB()) return false;
   try {
-    await fetch(sbUrl + '/rest/v1/lv_settings', {
+    var res = await fetch(sbUrl + '/rest/v1/lv_settings', {
       method: 'POST',
       headers: {
         'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey,
@@ -757,37 +768,60 @@ async function sbSettingsSave(key, value) {
       },
       body: JSON.stringify({ key: key, value: JSON.stringify(value), updated_at: new Date().toISOString() })
     });
-  } catch(e) { console.warn('Settings sync save failed:', e); }
+    return res.ok || res.status === 201 || res.status === 204;
+  } catch(e) { return false; }
 }
 
 async function sbSettingsLoad(key) {
   if (!hasSB()) return null;
-  try {
-    var res = await fetch(sbUrl + '/rest/v1/lv_settings?key=eq.' + encodeURIComponent(key) + '&select=value&limit=1', {
-      headers: { 'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey, 'Accept': 'application/json' }
-    });
-    var rows = await res.json();
-    if (Array.isArray(rows) && rows.length) return JSON.parse(rows[0].value);
-  } catch(e) { console.warn('Settings sync load failed:', e); }
+  var res = await fetch(sbUrl + '/rest/v1/lv_settings?key=eq.' + encodeURIComponent(key) + '&select=value&limit=1', {
+    headers: { 'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey, 'Accept': 'application/json' }
+  });
+  if (res.status === 404 || res.status === 400) throw new Error('table_missing');
+  var rows = await res.json();
+  if (Array.isArray(rows) && rows.length) return JSON.parse(rows[0].value);
   return null;
 }
 
-async function syncSettingsFromSupabase() {
-  if (!hasSB()) return;
-  var accounts = await sbSettingsLoad('lv_accounts');
-  if (accounts && Array.isArray(accounts)) {
-    lvAccounts = accounts;
-    try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
+async function syncSettingsFromSupabase(showStatus) {
+  if (!hasSB()) {
+    if (showStatus) setSyncStatus('⚠ No Supabase connection configured.', 'orange');
+    return false;
   }
-  var names = await sbSettingsLoad('lv_nmi_names');
-  if (names && typeof names === 'object') {
-    nmiNames = names;
-    try { localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames)); } catch(e) {}
+  try {
+    if (showStatus) setSyncStatus('Syncing from Supabase…');
+    var accounts = await sbSettingsLoad('lv_accounts');
+    if (accounts && Array.isArray(accounts)) {
+      lvAccounts = accounts;
+      try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
+    }
+    var names = await sbSettingsLoad('lv_nmi_names');
+    if (names && typeof names === 'object') {
+      nmiNames = names;
+      try { localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames)); } catch(e) {}
+    }
+    var activeIdx = await sbSettingsLoad('lv_active_account');
+    if (activeIdx !== null && !isNaN(parseInt(activeIdx))) {
+      lvActiveIdx = parseInt(activeIdx);
+      try { localStorage.setItem('lv_active_account', String(lvActiveIdx)); } catch(e) {}
+    }
+    if (showStatus) setSyncStatus('✓ Synced from Supabase — accounts and meter names loaded.', 'var(--green)');
+    return true;
+  } catch(e) {
+    if (e.message === 'table_missing') {
+      setSyncStatus('⚠ Supabase sync table missing. Run this SQL in Supabase → SQL Editor:<br><br><code style="font-size:10px;white-space:pre-wrap;display:block;background:var(--bg2,#f5f5f5);padding:8px;border-radius:4px;">' + SYNC_TABLE_SQL + '</code>', 'orange');
+    } else {
+      if (showStatus) setSyncStatus('⚠ Sync failed: ' + e.message, 'orange');
+    }
+    return false;
   }
-  var activeIdx = await sbSettingsLoad('lv_active_account');
-  if (activeIdx !== null && !isNaN(parseInt(activeIdx))) {
-    lvActiveIdx = parseInt(activeIdx);
-    try { localStorage.setItem('lv_active_account', String(lvActiveIdx)); } catch(e) {}
+}
+
+async function syncNow() {
+  var ok = await syncSettingsFromSupabase(true);
+  if (ok) {
+    renderAccountRows();
+    renderSettingsNMIs();
   }
 }
 
@@ -877,8 +911,8 @@ function updateKnownNMIs(data) {
 async function loadNMIsFromDB() {
   if (!hasSB()) return;
   try {
-    // Fetch recent rows just to discover all NMIs in the database
-    var url = sbUrl + '/rest/v1/lv_intervals?select=nmi&order=interval_end.desc&limit=500';
+    // Use a large limit and no date filter to find ALL distinct NMIs ever stored
+    var url = sbUrl + '/rest/v1/lv_intervals?select=nmi&limit=2000';
     var res = await fetch(url, { headers: { 'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey, 'Accept': 'application/json' } });
     var data = await res.json();
     if (Array.isArray(data)) updateKnownNMIs(data);
@@ -1462,7 +1496,7 @@ setInterval(checkLastSync, 60*1000);
 // Silently sync settings from Supabase then discover all NMIs on startup
 (async function() {
   // Pull latest settings from Supabase (overrides local cache with shared values)
-  await syncSettingsFromSupabase();
+  await syncSettingsFromSupabase(true);
   // Seed Wilsons default if still no accounts after sync
   if (!lvAccounts.length) {
     lvAccounts = [{ label: 'Wilsons', partner: '140046', apikey: 'e3c7ea100a1e29e297bfe71b8aa6c2da' }];
