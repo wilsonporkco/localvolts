@@ -556,6 +556,19 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div class="settings-hint" style="margin-top:10px;">Find these in Supabase → Project Settings → API</div>
         </div>
         <div class="settings-section">
+          <div class="settings-title">LocalVolts API accounts</div>
+          <div class="settings-hint" style="margin-bottom:12px;">Add one entry per account. The active account is used for all live data fetches.</div>
+          <div id="lv-account-rows"></div>
+          <button class="btn btn-ghost" onclick="addAccountRow()" style="margin-top:10px;">+ Add account</button>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="saveAccounts()">Save accounts</button>
+            <span id="accounts-confirm" style="font-family:var(--mono);font-size:11px;color:var(--green);display:none;">Saved</span>
+          </div>
+          <div class="settings-hint" style="margin-top:10px;">Active account: <strong id="active-account-label">—</strong> &nbsp;
+            <select id="active-account-select" class="settings-input" style="width:auto;display:inline-block;" onchange="setActiveAccount(this.value)"></select>
+          </div>
+        </div>
+        <div class="settings-section">
           <div class="settings-title">Meter names</div>
           <div id="nmi-name-rows"><p style="font-size:12px;color:var(--text3);">Load the Live tab first to discover your NMIs.</p></div>
           <button class="btn btn-primary" onclick="saveNames()" style="margin-top:12px;">Save names</button>
@@ -587,9 +600,88 @@ var SB_URL_DEFAULT = 'https://zmljvelkbhzalrniebhz.supabase.co';
 var SB_KEY_DEFAULT = 'sb_publishable_bEreuVztnHYoaBYc2ed4_A_jWGByPC-';
 var sbUrl = SB_URL_DEFAULT, sbKey = SB_KEY_DEFAULT;
 
+// LocalVolts API accounts — each: { label, partner, apikey }
+var lvAccounts = [];
+var lvActiveIdx = 0;
+
 try { nmiNames = JSON.parse(localStorage.getItem('lv_nmi_names') || '{}'); } catch(e) {}
 try { sbUrl = localStorage.getItem('lv_sb_url') || SB_URL_DEFAULT; } catch(e) {}
 try { sbKey = localStorage.getItem('lv_sb_key') || SB_KEY_DEFAULT; } catch(e) {}
+try { lvAccounts = JSON.parse(localStorage.getItem('lv_accounts') || '[]'); } catch(e) {}
+try { lvActiveIdx = parseInt(localStorage.getItem('lv_active_account') || '0', 10) || 0; } catch(e) {}
+
+function getActiveAccount() {
+  if (!lvAccounts.length) return null;
+  var idx = Math.min(lvActiveIdx, lvAccounts.length - 1);
+  return lvAccounts[idx];
+}
+
+function renderAccountRows() {
+  var c = document.getElementById('lv-account-rows');
+  if (!c) return;
+  if (!lvAccounts.length) {
+    c.innerHTML = '<p style="font-size:12px;color:var(--text3);">No accounts added yet.</p>';
+  } else {
+    c.innerHTML = lvAccounts.map(function(acc, i) {
+      return '<div class="settings-row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;" id="acc-row-'+i+'">' +
+        '<input type="text" class="settings-input" style="width:120px;" placeholder="Label" id="acc-label-'+i+'" value="'+escHtml(acc.label||'')+'">' +
+        '<input type="text" class="settings-input" style="width:90px;" placeholder="Partner ID" id="acc-partner-'+i+'" value="'+escHtml(acc.partner||'')+'">' +
+        '<input type="text" class="settings-input" style="width:220px;" placeholder="API key" id="acc-apikey-'+i+'" value="'+escHtml(acc.apikey||'')+'">' +
+        '<button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;color:var(--red,#e55);" onclick="removeAccountRow('+i+')">Remove</button>' +
+      '</div>';
+    }).join('');
+  }
+  rebuildActiveAccountSelect();
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function addAccountRow() {
+  lvAccounts.push({ label: '', partner: '', apikey: '' });
+  renderAccountRows();
+}
+
+function removeAccountRow(i) {
+  lvAccounts.splice(i, 1);
+  if (lvActiveIdx >= lvAccounts.length) lvActiveIdx = Math.max(0, lvAccounts.length - 1);
+  renderAccountRows();
+}
+
+function saveAccounts() {
+  lvAccounts = lvAccounts.map(function(_, i) {
+    return {
+      label:   (document.getElementById('acc-label-'+i)||{}).value || '',
+      partner: (document.getElementById('acc-partner-'+i)||{}).value || '',
+      apikey:  (document.getElementById('acc-apikey-'+i)||{}).value || ''
+    };
+  });
+  localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts));
+  localStorage.setItem('lv_active_account', String(lvActiveIdx));
+  rebuildActiveAccountSelect();
+  flash('accounts-confirm');
+}
+
+function rebuildActiveAccountSelect() {
+  var sel = document.getElementById('active-account-select');
+  var lbl = document.getElementById('active-account-label');
+  if (!sel) return;
+  if (!lvAccounts.length) {
+    sel.innerHTML = '<option value="">— none —</option>';
+    if (lbl) lbl.textContent = '—';
+    return;
+  }
+  sel.innerHTML = lvAccounts.map(function(acc, i) {
+    return '<option value="'+i+'"'+(i===lvActiveIdx?' selected':'')+'>'+escHtml(acc.label||('Account '+(i+1)))+' ('+escHtml(acc.partner)+')</option>';
+  }).join('');
+  var active = getActiveAccount();
+  if (lbl) lbl.textContent = active ? (active.label || 'Account '+(lvActiveIdx+1)) : '—';
+}
+
+function setActiveAccount(idx) {
+  lvActiveIdx = parseInt(idx, 10) || 0;
+  localStorage.setItem('lv_active_account', String(lvActiveIdx));
+  rebuildActiveAccountSelect();
+}
 
 function hasSB() { return !!(sbUrl && sbKey); }
 
@@ -618,6 +710,7 @@ function switchPanel(name, el) {
   if (name==='settings') {
     document.getElementById('sb-url').value = sbUrl;
     document.getElementById('sb-key').value = sbKey;
+    renderAccountRows();
     renderSettingsNMIs();
   }
 }
@@ -720,7 +813,11 @@ async function sbQuery(table, fromTs, toTs, nmiFilter, limitN, selectCols, extra
 }
 
 async function apiFetch(params) {
-  var qs='?'+new URLSearchParams(params).toString();
+  var p = Object.assign({}, params);
+  var acc = getActiveAccount();
+  if (acc && acc.apikey) p._apikey = acc.apikey;
+  if (acc && acc.partner) p._partner = acc.partner;
+  var qs='?'+new URLSearchParams(p).toString();
   var res=await fetch(PROXY+qs);
   var text=await res.text();
   var data; try{data=JSON.parse(text);}catch(e){throw new Error('Invalid response: '+text.slice(0,200));}
@@ -1216,8 +1313,15 @@ function exportCSV(tab) {
 
 async function testAPI() {
   var out=document.getElementById('debug-out'); out.style.display='block'; out.textContent='Testing...';
-  try { var res=await fetch(PROXY+'?NMI=*'); var t=await res.text(); out.textContent='HTTP '+res.status+'\n\n'+t.slice(0,400); }
-  catch(e){out.textContent='Error: '+e.message;}
+  try {
+    var p = {NMI:'*'};
+    var acc = getActiveAccount();
+    if (acc && acc.apikey) p._apikey = acc.apikey;
+    if (acc && acc.partner) p._partner = acc.partner;
+    var res=await fetch(PROXY+'?'+new URLSearchParams(p).toString());
+    var t=await res.text();
+    out.textContent='HTTP '+res.status+'\n\n'+t.slice(0,400);
+  } catch(e){out.textContent='Error: '+e.message;}
 }
 async function testSupabase() {
   var out=document.getElementById('debug-out'); out.style.display='block'; out.textContent='Testing...';
