@@ -614,6 +614,15 @@ try { sbKey = localStorage.getItem('lv_sb_key') || SB_KEY_DEFAULT; } catch(e) {}
 try { lvAccounts = JSON.parse(localStorage.getItem('lv_accounts') || '[]'); } catch(e) {}
 try { lvActiveIdx = parseInt(localStorage.getItem('lv_active_account') || '0', 10) || 0; } catch(e) {}
 try { knownNMIs = JSON.parse(localStorage.getItem('lv_known_nmis') || '[]'); } catch(e) {}
+// Remove any NMIs that are clearly invalid (wrong length for MSATS format or known typos)
+// Valid NMIs are 10 chars (numeric) or start with QB (virtual). Filter out anything else.
+knownNMIs = knownNMIs.filter(function(n) {
+  if (!n) return false;
+  if (/^QB/i.test(n)) return true;       // virtual NMI like QB00014931
+  if (/^\d{10}$/.test(n)) return true;   // standard 10-digit NMI
+  return false;                           // anything else (e.g. 11-digit typo) — drop it
+});
+try { localStorage.setItem('lv_known_nmis', JSON.stringify(knownNMIs)); } catch(e) {}
 // Seed the default Wilsons account if no accounts have been saved yet
 if (!lvAccounts.length) {
   lvAccounts = [{ label: 'Wilsons', partner: '140046', apikey: 'e3c7ea100a1e29e297bfe71b8aa6c2da' }];
@@ -795,9 +804,16 @@ async function testAccountAPI(i) {
     out.textContent = '⚠ Fill in Partner ID and API key first.';
     return;
   }
+  // Read manual NMIs from the form field for this row
+  var manualNMIsRaw = (document.getElementById('acc-nmis-'+i)||{value:''}).value.trim();
+  var manualNMIs = manualNMIsRaw ? manualNMIsRaw.split(',').map(function(n){ return n.trim(); }).filter(Boolean) : [];
+  // Use manual NMIs for the test if available — avoids cross-account confusion
+  // where one API key may return another account's NMIs via NMI=*
+  var testNMI = manualNMIs.length ? manualNMIs[0] : '*';
+
   try {
     var from = isoHoursAgo(70);
-    var p = { NMI: '*', from: from, _apikey: acc.apikey, _partner: acc.partner };
+    var p = { NMI: testNMI, from: from, _apikey: acc.apikey, _partner: acc.partner };
     var res = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
     var text = await res.text();
     var data; try { data = JSON.parse(text); } catch(e) { data = null; }
@@ -808,7 +824,7 @@ async function testAccountAPI(i) {
     }
     if (!Array.isArray(data) || !data.length) {
       out.style.color = 'orange';
-      out.textContent = '⚠ No data returned. Response: ' + text.slice(0, 200);
+      out.textContent = '⚠ No data returned for NMI ' + testNMI + '. Response: ' + text.slice(0, 200);
       return;
     }
     var nmis = [];
@@ -818,7 +834,8 @@ async function testAccountAPI(i) {
       out.textContent = '⚠ Got ' + data.length + ' rows but no NMI field found.\nFirst row keys: ' + Object.keys(data[0]).join(', ');
     } else {
       out.style.color = '#22c55e';
-      out.textContent = '✓ Connected (partner ' + acc.partner + ') — ' + data.length + ' rows, NMIs: ' + nmis.join(', ');
+      out.textContent = '✓ Connected (partner ' + acc.partner + ') — ' + data.length + ' rows, NMIs: ' + nmis.join(', ')
+        + (manualNMIs.length ? '\n(tested with manual NMI: ' + testNMI + ')' : '');
       updateKnownNMIs(data);
       renderSettingsNMIs();
       sbSettingsSave('lv_known_nmis', knownNMIs);
@@ -937,7 +954,15 @@ async function syncSettingsFromSupabase(showStatus) {
     var syncedNMIs = await sbSettingsLoad('lv_known_nmis');
     if (syncedNMIs && Array.isArray(syncedNMIs)) {
       syncedNMIs.forEach(function(n) { if (n && knownNMIs.indexOf(n) === -1) knownNMIs.push(n); });
+      // Strip invalid NMIs (e.g. 11-digit typos) — valid = 10-digit numeric or QB-prefix
+      knownNMIs = knownNMIs.filter(function(n) {
+        if (!n) return false;
+        if (/^QB/i.test(n)) return true;
+        if (/^\d{10}$/.test(n)) return true;
+        return false;
+      });
       try { localStorage.setItem('lv_known_nmis', JSON.stringify(knownNMIs)); } catch(e) {}
+      sbSettingsSave('lv_known_nmis', knownNMIs); // push cleaned list back to Supabase
     }
 
     renderAccountRows(); rebuildActiveAccountSelect(); renderSidebarAccounts();
@@ -1021,8 +1046,20 @@ function renderSettingsNMIs() {
   var c = document.getElementById('nmi-name-rows');
   if (!knownNMIs.length) { c.innerHTML='<p style="font-size:12px;color:var(--text3);">Load the Live tab first.</p>'; return; }
   c.innerHTML = knownNMIs.map(function(nmi){
-    return '<div class="settings-row"><span class="settings-label" style="font-family:var(--mono);font-size:11px;">'+nmi+'</span><input type="text" class="settings-input" id="name-'+nmi+'" value="'+(nmiNames[nmi]||'')+'" placeholder="e.g. Farm House, Solar" /></div>';
+    return '<div class="settings-row"><span class="settings-label" style="font-family:var(--mono);font-size:11px;">'+nmi+'</span><input type="text" class="settings-input" id="name-'+nmi+'" value="'+(nmiNames[nmi]||'')+'" placeholder="e.g. Farm House, Solar" /><button onclick="removeNMI(\''+nmi+'\')" style="margin-left:6px;padding:2px 7px;font-size:11px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text3);cursor:pointer;" title="Remove this NMI">✕</button></div>';
   }).join('');
+}
+
+function removeNMI(nmi) {
+  if (!confirm('Remove NMI ' + nmi + ' from the list?')) return;
+  knownNMIs = knownNMIs.filter(function(n){ return n !== nmi; });
+  delete nmiNames[nmi];
+  try { localStorage.setItem('lv_known_nmis', JSON.stringify(knownNMIs)); } catch(e) {}
+  try { localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames)); } catch(e) {}
+  sbSettingsSave('lv_known_nmis', knownNMIs);
+  sbSettingsSave('lv_nmi_names', nmiNames);
+  rebuildSelects();
+  renderSettingsNMIs();
 }
 
 function saveNames() {
