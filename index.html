@@ -302,6 +302,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
     </div>
     <nav class="nav">
       <div class="nav-section">Monitor</div>
+      <button class="nav-item" onclick="switchPanel('comparison',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Comparison
+      </button>
       <button class="nav-item active" onclick="switchPanel('live',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
         Live
@@ -337,6 +341,46 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
   <!-- Main content -->
   <main class="main">
+
+    <!-- COMPARISON PANEL -->
+    <div class="panel" id="panel-comparison">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Comparison</div>
+          <div class="page-sub">Confirmed actual data · NMIs side by side · AEST</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div class="filter-group"><span class="filter-label">Days back</span>
+            <select id="comparison-days" onchange="loadComparison()" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 12px;outline:none;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+              <option value="7">Last 7 days</option>
+              <option value="14" selected>Last 14 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost" onclick="loadComparison()">↺ Refresh</button>
+          <div class="status-pill"><div class="status-dot" id="comparison-dot"></div><span id="comparison-status">Loading…</span></div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="error-banner" id="comparison-error"></div>
+        <div class="loading-state" id="comparison-loading"><div class="loading-spinner"></div><div class="loading-text">Fetching confirmed data…</div></div>
+        <div id="comparison-content" style="display:none;">
+          <div class="table-card" style="overflow-x:auto;">
+            <div class="table-header">
+              <span class="table-title">Actual days · all meters</span>
+              <button class="btn btn-ghost" onclick="exportComparisonCSV()" style="font-size:11px;padding:5px 12px;">Export CSV</button>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="data-table" id="comparison-table">
+                <thead id="comparison-thead"></thead>
+                <tbody id="comparison-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="comparison-totals" style="margin-top:16px;"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- LIVE PANEL -->
     <div class="panel active" id="panel-live">
@@ -1022,6 +1066,7 @@ function switchPanel(name, el) {
       renderSettingsNMIs();
     });
   }
+  if (name==='comparison') { loadComparison(); }
 }
 
 function hideAllErrors() {
@@ -1212,6 +1257,136 @@ function summaryBox(items) {
 function qPill(q) {
   if(!q) return '—';
   return '<span class="quality-pill '+q+'">'+q+'</span>';
+}
+
+/* ---- COMPARISON ---- */
+var comparisonCSVData = [];
+
+async function loadComparison() {
+  if (!hasSB()) { showErr('comparison-error', 'Add Supabase credentials in Settings first.'); return; }
+  setDot('comparison-dot', 'busy');
+  setTxt('comparison-status', 'Loading…');
+  document.getElementById('comparison-loading').style.display = 'block';
+  document.getElementById('comparison-content').style.display = 'none';
+  document.getElementById('comparison-error').style.display = 'none';
+
+  try {
+    var daysBack = parseInt(document.getElementById('comparison-days').value || '14', 10);
+    var to = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
+
+    // Only Act quality — confirmed NEM-settled data
+    var rows = await sbQuery('lv_intervals', from, to, null, 100000,
+      'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents',
+      ['quality=eq.Act']);
+
+    if (!rows.length) throw new Error('No confirmed (Act) data found in the last ' + daysBack + ' days. Check back after NEM settlement (1–3 days).');
+
+    // Aggregate by AEST day × NMI
+    var dayNmi = {};
+    var nmiSet = {};
+    rows.forEach(function(r) {
+      var day = isoDate(toAEST(new Date(r.interval_end)));
+      var nmi = r.nmi; if (!nmi) return;
+      nmiSet[nmi] = true;
+      if (!dayNmi[day]) dayNmi[day] = {};
+      if (!dayNmi[day][nmi]) dayNmi[day][nmi] = { imports: 0, exports: 0, costs: 0, earnings: 0 };
+      dayNmi[day][nmi].imports  += parseFloat(r.imports_kwh)  || 0;
+      dayNmi[day][nmi].exports  += parseFloat(r.exports_kwh)  || 0;
+      dayNmi[day][nmi].costs    += parseFloat(r.costs_cents)   || 0;
+      dayNmi[day][nmi].earnings += parseFloat(r.earnings_cents)|| 0;
+    });
+
+    var days = Object.keys(dayNmi).sort().reverse(); // newest first
+    var nmis = Object.keys(nmiSet).sort();
+
+    // Build column headers — NMI label spanning 4 sub-columns each
+    var thead = '<tr><th rowspan="2" style="vertical-align:bottom;">Date</th>';
+    nmis.forEach(function(nmi) {
+      var name = nmiNames[nmi] ? escHtml(nmiNames[nmi]) : nmi;
+      thead += '<th colspan="4" class="num" style="border-left:2px solid #e5e7eb;text-align:center;font-size:10px;padding-bottom:4px;">' + name + '</th>';
+    });
+    thead += '</tr><tr>';
+    nmis.forEach(function(nmi, idx) {
+      var bl = 'border-left:2px solid #e5e7eb;';
+      thead += '<th class="num" style="' + bl + '">Used kWh</th>';
+      thead += '<th class="num">Sold kWh</th>';
+      thead += '<th class="num">Cost</th>';
+      thead += '<th class="num">¢/kWh</th>';
+    });
+    thead += '</tr>';
+
+    // Build data rows + CSV accumulator
+    comparisonCSVData = [];
+    var tbody = days.map(function(day) {
+      // Format date nicely: "Mon 12 May"
+      var dt = new Date(day + 'T12:00:00+10:00');
+      var dateLabel = dt.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' });
+      var row = '<tr><td style="white-space:nowrap;">' + dateLabel + '</td>';
+      var csvRow = { date: day };
+      nmis.forEach(function(nmi, idx) {
+        var d = dayNmi[day][nmi];
+        var bl = 'border-left:2px solid #e5e7eb;';
+        var nmiKey = nmiNames[nmi] || nmi;
+        if (d) {
+          var cPerKwh = d.imports > 0 ? (d.costs / d.imports) : 0;
+          var costDollars = d.costs / 100;
+          row += '<td class="num" style="' + bl + '">' + d.imports.toFixed(2) + '</td>';
+          row += '<td class="num">' + d.exports.toFixed(2) + '</td>';
+          row += '<td class="num">$' + costDollars.toFixed(2) + '</td>';
+          row += '<td class="num">' + cPerKwh.toFixed(1) + '</td>';
+          csvRow[nmiKey + '_used_kwh']  = d.imports.toFixed(3);
+          csvRow[nmiKey + '_sold_kwh']  = d.exports.toFixed(3);
+          csvRow[nmiKey + '_cost_$']    = costDollars.toFixed(4);
+          csvRow[nmiKey + '_c_per_kwh'] = cPerKwh.toFixed(2);
+        } else {
+          row += '<td class="num" style="' + bl + '">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>';
+          csvRow[nmiKey + '_used_kwh'] = ''; csvRow[nmiKey + '_sold_kwh'] = '';
+          csvRow[nmiKey + '_cost_$'] = ''; csvRow[nmiKey + '_c_per_kwh'] = '';
+        }
+      });
+      row += '</tr>';
+      comparisonCSVData.push(csvRow);
+      return row;
+    }).join('');
+
+    // Totals row across all displayed days
+    var totalsRow = '<div class="metrics-row" style="grid-template-columns:repeat('+Math.min(nmis.length*2,6)+',1fr);">';
+    nmis.forEach(function(nmi) {
+      var totI = 0, totE = 0, totC = 0;
+      days.forEach(function(d) { var x=dayNmi[d][nmi]; if(x){totI+=x.imports;totE+=x.exports;totC+=x.costs;} });
+      var name = nmiNames[nmi] ? escHtml(nmiNames[nmi]) : nmi;
+      var avgC = totI > 0 ? (totC / totI) : 0;
+      totalsRow += mCard(name + ' · used', totI.toFixed(1), 'kWh total', '') +
+                   mCard(name + ' · avg cost', avgC.toFixed(1), '¢ / kWh', 'amber');
+    });
+    totalsRow += '</div>';
+
+    document.getElementById('comparison-thead').innerHTML = thead;
+    document.getElementById('comparison-tbody').innerHTML = tbody;
+    document.getElementById('comparison-totals').innerHTML = totalsRow;
+    document.getElementById('comparison-loading').style.display = 'none';
+    document.getElementById('comparison-content').style.display = 'block';
+    setDot('comparison-dot', 'ok');
+    setTxt('comparison-status', days.length + ' days · ' + nmis.length + ' NMI(s) · Act only');
+  } catch(err) {
+    document.getElementById('comparison-loading').style.display = 'none';
+    showErr('comparison-error', err.message);
+    setDot('comparison-dot', 'err');
+    setTxt('comparison-status', 'Failed');
+  }
+}
+
+function exportComparisonCSV() {
+  if (!comparisonCSVData.length) return;
+  var keys = Object.keys(comparisonCSVData[0]);
+  var csv = [keys.join(',')].concat(comparisonCSVData.map(function(r){
+    return keys.map(function(k){ return JSON.stringify(r[k]!==undefined?r[k]:''); }).join(',');
+  })).join('\n');
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'localvolts_comparison_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
 }
 
 /* ---- LIVE ---- */
@@ -1797,6 +1972,10 @@ async function checkLastSync() {
 
 <!-- Mobile bottom navigation -->
 <nav class="mobile-nav" id="mobile-nav">
+  <button class="mobile-nav-item" id="mob-comparison" onclick="switchPanel('comparison',null,'mob-comparison')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Compare
+  </button>
   <button class="mobile-nav-item active" id="mob-live" onclick="switchPanel('live',null,'mob-live')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
     Live
