@@ -1,38 +1,82 @@
 #!/usr/bin/env python3
 """
-Localvolts → Supabase sync script.
+Localvolts -> Supabase sync script.
 
 Two modes:
   HOURS_BACK=0  : Default fetch (6hr lookback + 24hr forecast). Run every 30 mins.
-  HOURS_BACK=N  : Historical backfill — loops day by day using AEST boundaries.
+  HOURS_BACK=N  : Historical backfill -- loops day by day using AEST boundaries.
 
-Only 5-minute intervals are saved — 30-min intervals overlap with 5-min data
-and cause double-counting in the dashboard.
+Multi-account support:
+  Accounts are loaded automatically from Supabase lv_settings (saved by the dashboard).
+  Fallback: LV_ACCOUNTS env var JSON, then single LV_API_KEY/LV_PARTNER/LV_NMI vars.
+
+Only 5-minute intervals are saved.
 """
 
 import os, json, urllib.request, urllib.parse, time
 from datetime import datetime, timezone, timedelta
 
-LV_API_KEY   = os.environ["LV_API_KEY"]
-LV_PARTNER   = os.environ["LV_PARTNER"]
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-LV_NMI       = os.environ.get("LV_NMI", "*")
 HOURS_BACK   = int(os.environ.get("LV_HOURS_BACK", "0"))
 
 LV_BASE = "https://api.localvolts.com/v1"
 
-def lv_fetch(from_dt=None, to_dt=None):
-    # Build query string manually — urllib encodes colons which breaks the API
-    qs = f"NMI={urllib.parse.quote(LV_NMI)}"
+def supabase_get_setting(key):
+    url = f"{SUPABASE_URL}/rest/v1/lv_settings?key=eq.{urllib.parse.quote(key)}&select=value&limit=1"
+    req = urllib.request.Request(url, headers={
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            rows = json.loads(r.read())
+            if rows and isinstance(rows, list):
+                return rows[0].get("value")
+    except Exception as e:
+        print(f"  WARNING: Could not read {key} from Supabase: {e}")
+    return None
+
+def load_accounts():
+    sb_accounts = supabase_get_setting("lv_accounts")
+    if sb_accounts and isinstance(sb_accounts, list) and sb_accounts:
+        valid = [a for a in sb_accounts if a.get("apikey") and a.get("partner")]
+        if valid:
+            print(f"  Loaded {len(valid)} account(s) from Supabase lv_settings")
+            for a in valid:
+                if not a.get("nmi"):
+                    a["nmi"] = ",".join(a.get("nmis", [])) if a.get("nmis") else "*"
+            return valid
+    raw = os.environ.get("LV_ACCOUNTS", "")
+    if raw.strip():
+        try:
+            accounts = json.loads(raw)
+            if isinstance(accounts, list) and accounts:
+                print(f"  Loaded {len(accounts)} account(s) from LV_ACCOUNTS env var")
+                return accounts
+        except Exception as e:
+            print(f"  WARNING: Could not parse LV_ACCOUNTS JSON: {e}")
+    print("  Using single-account env vars (LV_API_KEY / LV_PARTNER / LV_NMI)")
+    return [{
+        "label":   os.environ.get("LV_LABEL", "Default"),
+        "partner": os.environ["LV_PARTNER"],
+        "apikey":  os.environ["LV_API_KEY"],
+        "nmi":     os.environ.get("LV_NMI", "*"),
+    }]
+
+def lv_fetch(account, from_dt=None, to_dt=None):
+    nmi     = account.get("nmi", "*")
+    api_key = account["apikey"]
+    partner = account["partner"]
+    qs = f"NMI={urllib.parse.quote(nmi)}"
     if from_dt: qs += f"&from={from_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     if to_dt:   qs += f"&to={to_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     url = f"{LV_BASE}/customer/interval?{qs}"
     print(f"    GET {url}")
     req = urllib.request.Request(url, headers={
-        "Authorization": f"apikey {LV_API_KEY}",
-        "partner": LV_PARTNER,
-        "User-Agent": "LocalvoltsSync/1.0",
+        "Authorization": f"apikey {api_key}",
+        "partner":       partner,
+        "User-Agent":    "LocalvoltsSync/1.0",
     })
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read())
@@ -105,26 +149,18 @@ def supabase_upsert(rows):
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Supabase {e.code}: {e.read().decode()[:200]}")
 
-def fetch_and_save(from_dt=None, to_dt=None, label=""):
-    raw = lv_fetch(from_dt, to_dt)
+def fetch_and_save(account, from_dt=None, to_dt=None, label=""):
+    raw = lv_fetch(account, from_dt, to_dt)
     if raw and isinstance(raw[0], dict) and "error" in raw[0]:
         print(f"    API error: {raw[0]['error']}")
         return 0
-
-    # Only keep 5-minute intervals — 30-min intervals overlap with 5-min data
-    # and cause double-counting when both exist for the same time period.
-    # FIX: cast to int before comparing — the API may return intervalDuration as
-    # a string (e.g. "30"), and in Python "30" != 30 is True, so the filter
-    # would silently pass all 30-min intervals through.
     def is_five_min(r):
         dur = r.get("intervalDuration")
         try:
             return int(dur) != 30
         except (TypeError, ValueError):
-            return True  # keep if duration is unknown
-
+            return True
     valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd") and is_five_min(r)]
-
     qualities = {}
     durations = {}
     for r in valid:
@@ -141,50 +177,56 @@ def fetch_and_save(from_dt=None, to_dt=None, label=""):
         print(f"    Batch {i//500+1}: HTTP {status}")
     return len(rows)
 
-def main():
-    now = datetime.now(timezone.utc)
-    print(f"[{now.isoformat()}] Sync — NMI={LV_NMI} HOURS_BACK={HOURS_BACK}")
-    total = 0
-
-    if HOURS_BACK == 0:
-        # Live mode: fetch last 6 hours of actuals + 24hr forecast.
-        # Fetching recent history ensures actuals overwrite any stale forecast data.
-        from_dt = now - timedelta(hours=6)
-        print(f"  Mode: live fetch (6hr lookback + forecast, from {from_dt.strftime('%H:%MZ')})")
-        total = fetch_and_save(from_dt=from_dt, label="(live+lookback)")
+def sync_account(account, now):
+    label = account.get("label", account.get("partner", "?"))
+    nmis_list = account.get("nmis") or []
+    if isinstance(nmis_list, list) and nmis_list:
+        nmi = nmis_list[0]
     else:
-        # Historical: loop day by day using AEST midnight boundaries.
+        nmi = account.get("nmi", "*")
+    account = dict(account, nmi=nmi)
+    total = 0
+    print(f"\n  Account: {label} (partner={account.get('partner')}, NMI={nmi})")
+    if HOURS_BACK == 0:
+        from_dt = now - timedelta(hours=6)
+        print(f"    Mode: live fetch (6hr lookback, from {from_dt.strftime('%H:%MZ')})")
+        total = fetch_and_save(account, from_dt=from_dt, label="(live+lookback)")
+    else:
         days = max(1, (HOURS_BACK + 23) // 24)
-        print(f"  Mode: historical backfill — {days} AEST days")
-
+        print(f"    Mode: historical backfill -- {days} AEST days")
         for i in range(days - 1, -1, -1):
             aest_date = (now + timedelta(hours=10)).date() - timedelta(days=i)
-            from_utc = datetime(aest_date.year, aest_date.month, aest_date.day,
-                                0, 0, 0, tzinfo=timezone.utc) - timedelta(hours=10)
-            # API limit: 'to - from' must be strictly less than 24 hours.
-            # Using 24h - 1s avoids the "cannot exceed 24 hours" rejection.
+            from_utc = datetime(aest_date.year, aest_date.month, aest_date.day, 0, 0, 0, tzinfo=timezone.utc) - timedelta(hours=10)
             to_utc = from_utc + timedelta(hours=24, seconds=-1)
-
             if from_utc >= now:
-                print(f"  Skipping future day {aest_date}")
+                print(f"    Skipping future day {aest_date}")
                 continue
-            # API limit: 'from' cannot be more than 72 hours in the past.
-            # Use 71h as a safe margin.
             if now - from_utc > timedelta(hours=71):
-                print(f"  Skipping {aest_date} — beyond 72h API history limit")
+                print(f"    Skipping {aest_date} -- beyond 72h API history limit")
                 continue
             to_utc = min(to_utc, now)
-
-            print(f"  Day {days-i}/{days}: AEST {aest_date} → UTC {from_utc.strftime('%H:%MZ')}–{to_utc.strftime('%H:%MZ')}")
+            print(f"    Day {days-i}/{days}: AEST {aest_date}")
             try:
-                saved = fetch_and_save(from_utc, to_utc, f"(AEST {aest_date})")
+                saved = fetch_and_save(account, from_utc, to_utc, f"(AEST {aest_date})")
                 total += saved
                 if saved > 0:
                     time.sleep(0.5)
             except Exception as e:
                 print(f"    ERROR: {e}")
+    return total
 
-    print(f"\n  Total rows saved: {total}")
+def main():
+    now      = datetime.now(timezone.utc)
+    accounts = load_accounts()
+    print(f"[{now.isoformat()}] Sync -- {len(accounts)} account(s), HOURS_BACK={HOURS_BACK}")
+    grand_total = 0
+    for account in accounts:
+        try:
+            grand_total += sync_account(account, now)
+        except Exception as e:
+            label = account.get("label", account.get("partner", "?"))
+            print(f"  ERROR syncing account {label}: {e}")
+    print(f"\n  Total rows saved: {grand_total}")
 
 if __name__ == "__main__":
     main()
