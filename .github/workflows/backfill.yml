@@ -2,9 +2,9 @@ name: Localvolts daily backfill
 
 on:
   schedule:
-    # 9 PM UTC = 7 AM AEST — re-fetches last 3 days so that NEM-settled
+    # 6 AM UTC = 4 PM AEST — re-fetches last 3 days so that NEM-settled
     # Act data overwrites any stale Fcst/Exp estimates in the DB
-    - cron: '0 21 * * *'
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       hours_back:
@@ -28,6 +28,7 @@ jobs:
 
       - name: Run backfill (72hr = 3 AEST days)
         env:
+          LV_ACCOUNTS:   ${{ secrets.LV_ACCOUNTS }}
           LV_API_KEY:    ${{ secrets.LV_API_KEY }}
           LV_PARTNER:    ${{ secrets.LV_PARTNER }}
           SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
