@@ -777,7 +777,9 @@ async function testAccountAPI(i) {
   try {
     var from = isoHoursAgo(70);
     var p = { NMI: '*', from: from, _apikey: acc.apikey, _partner: acc.partner };
-    var res = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
+    var qs = new URLSearchParams(p).toString();
+    out.textContent = 'Sending: partner=' + acc.partner + ' key=' + acc.apikey.slice(0,8) + '...\n' + PROXY + '?' + qs.slice(0,120);
+    var res = await fetch(PROXY + '?' + qs);
     var text = await res.text();
     var data; try { data = JSON.parse(text); } catch(e) { data = null; }
     if (!res.ok) {
@@ -797,7 +799,7 @@ async function testAccountAPI(i) {
       out.textContent = '⚠ Got ' + data.length + ' rows but no NMI field found.\nFirst row keys: ' + Object.keys(data[0]).join(', ');
     } else {
       out.style.color = '#22c55e';
-      out.textContent = '✓ Connected — ' + data.length + ' rows, NMIs: ' + nmis.join(', ');
+      out.textContent = '✓ Connected (partner ' + acc.partner + ') — ' + data.length + ' rows, NMIs: ' + nmis.join(', ');
       updateKnownNMIs(data);
       renderSettingsNMIs();
       sbSettingsSave('lv_known_nmis', knownNMIs);
@@ -968,6 +970,13 @@ function switchPanel(name, el) {
     document.getElementById('sb-key').value = sbKey;
     renderAccountRows();
     renderSettingsNMIs();
+    // Always pull fresh data from Supabase when Settings is opened
+    syncSettingsFromSupabase(false).then(function() {
+      renderAccountRows();
+      rebuildActiveAccountSelect();
+      renderSidebarAccounts();
+      renderSettingsNMIs();
+    });
   }
 }
 
@@ -1635,8 +1644,8 @@ setInterval(loadLive, 5*60*1000);
 checkLastSync();
 setInterval(checkLastSync, 60*1000);
 
-// On every page load: sync settings from Supabase, discover all NMIs from all
-// accounts, then load daily data. No buttons needed — everything is automatic.
+// On every page load: sync accounts from Supabase, discover all NMIs,
+// then reload live + daily with the full account set. No buttons needed.
 (async function() {
   // 1. Pull accounts, meter names and known NMIs from Supabase
   await syncSettingsFromSupabase(false);
@@ -1650,13 +1659,17 @@ setInterval(checkLastSync, 60*1000);
 
   rebuildActiveAccountSelect();
   rebuildSelects();
+  renderSidebarAccounts();
 
-  // 3. Load NMIs from Supabase DB (covers accounts whose data is synced there)
+  // 3. Now that accounts are loaded, reload live data so all accounts are included
+  loadLive();
+
+  // 4. Load NMIs from Supabase DB
   await loadNMIsFromDB();
 
-  // 4. Discover NMIs live from every API account (covers accounts not in Supabase)
+  // 5. Discover NMIs live from every API account
   var accounts = lvAccounts.filter(function(a) { return a.apikey; });
-  var from = isoHoursAgo(48);
+  var from = isoHoursAgo(70);
   for (var i = 0; i < accounts.length; i++) {
     try {
       var data = await apiFetchWithAccount({NMI: '*', from: from}, accounts[i]);
@@ -1664,13 +1677,13 @@ setInterval(checkLastSync, 60*1000);
     } catch(e) {}
   }
 
-  // 5. Push discovered NMIs back to Supabase so all devices stay in sync
+  // 6. Push discovered NMIs to Supabase so all devices stay in sync
   if (knownNMIs.length) sbSettingsSave('lv_known_nmis', knownNMIs);
 
   rebuildSelects();
   renderSettingsNMIs();
 
-  // 6. Load daily chart now that we have NMIs
+  // 7. Load daily chart now that we have all NMIs
   if (hasSB()) loadDaily();
 })();
 
