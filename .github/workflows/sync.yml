@@ -2,9 +2,8 @@ name: Localvolts live sync
 
 on:
   schedule:
-    # Every 30 minutes — keeps recent intervals fresh and captures actuals
-    # as they replace forecast data within the 6-hour lookback window
-    - cron: '*/30 * * * *'
+    # Every 5 minutes — matches LocalVolts data update frequency
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
