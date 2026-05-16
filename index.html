@@ -562,9 +562,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <button class="btn btn-ghost" onclick="addAccountRow()" style="margin-top:10px;">+ Add account</button>
           <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="saveAccounts()">Save accounts</button>
+            <button class="btn btn-ghost" onclick="discoverNMIsFromAPI()">Discover NMIs</button>
             <span id="accounts-confirm" style="font-family:var(--mono);font-size:11px;color:var(--green);display:none;">Saved</span>
+            <span id="nmi-discover-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);display:none;"></span>
           </div>
-          <div class="settings-hint" style="margin-top:10px;">Active account: <strong id="active-account-label">—</strong> &nbsp;
+          <div class="settings-hint" style="margin-top:10px;">Active account:&nbsp;
             <select id="active-account-select" class="settings-input" style="width:auto;display:inline-block;" onchange="setActiveAccount(this.value)"></select>
           </div>
         </div>
@@ -650,15 +652,57 @@ function removeAccountRow(i) {
 function saveAccounts() {
   lvAccounts = lvAccounts.map(function(_, i) {
     return {
-      label:   (document.getElementById('acc-label-'+i)||{}).value || '',
-      partner: (document.getElementById('acc-partner-'+i)||{}).value || '',
-      apikey:  (document.getElementById('acc-apikey-'+i)||{}).value || ''
+      label:   (document.getElementById('acc-label-'+i) || {value:''}).value.trim(),
+      partner: (document.getElementById('acc-partner-'+i) || {value:''}).value.trim(),
+      apikey:  (document.getElementById('acc-apikey-'+i) || {value:''}).value.trim()
     };
   });
   localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts));
   localStorage.setItem('lv_active_account', String(lvActiveIdx));
-  rebuildActiveAccountSelect();
+  renderAccountRows();
   flash('accounts-confirm');
+  // Auto-discover NMIs for the active account
+  discoverNMIsFromAPI();
+}
+
+async function apiFetchWithAccount(params, acc) {
+  var p = Object.assign({}, params);
+  if (acc && acc.apikey)  p._apikey  = acc.apikey;
+  if (acc && acc.partner) p._partner = acc.partner;
+  var res = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
+  var text = await res.text();
+  var data; try { data = JSON.parse(text); } catch(e) { throw new Error('Invalid response'); }
+  if (!res.ok) throw new Error((data && (data.message || data.error)) || 'HTTP ' + res.status);
+  return data;
+}
+
+async function discoverNMIsFromAPI() {
+  var statusEl = document.getElementById('nmi-discover-status');
+  if (statusEl) { statusEl.textContent = 'Discovering NMIs...'; statusEl.style.display = 'inline'; }
+
+  // Always start with NMIs from Supabase (original/default account)
+  await loadNMIsFromDB();
+
+  // Then fetch from every saved account
+  var accounts = lvAccounts.filter(function(a) { return a.apikey; });
+  if (!accounts.length) {
+    if (statusEl) statusEl.textContent = knownNMIs.length ? 'Found ' + knownNMIs.length + ' NMI(s)' : 'No accounts configured';
+    renderSettingsNMIs();
+    return;
+  }
+
+  var errors = 0;
+  for (var i = 0; i < accounts.length; i++) {
+    try {
+      var data = await apiFetchWithAccount({NMI: '*'}, accounts[i]);
+      if (Array.isArray(data) && data.length) updateKnownNMIs(data);
+    } catch(e) { errors++; }
+  }
+
+  renderSettingsNMIs();
+  if (statusEl) {
+    statusEl.textContent = 'Found ' + knownNMIs.length + ' NMI(s) across ' + accounts.length + ' account(s)' + (errors ? ' (' + errors + ' error(s))' : '');
+  }
 }
 
 function rebuildActiveAccountSelect() {
@@ -681,6 +725,7 @@ function setActiveAccount(idx) {
   lvActiveIdx = parseInt(idx, 10) || 0;
   localStorage.setItem('lv_active_account', String(lvActiveIdx));
   rebuildActiveAccountSelect();
+  discoverNMIsFromAPI();
 }
 
 function hasSB() { return !!(sbUrl && sbKey); }
