@@ -665,6 +665,8 @@ function saveAccounts() {
   });
   localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts));
   localStorage.setItem('lv_active_account', String(lvActiveIdx));
+  sbSettingsSave('lv_accounts', lvAccounts);
+  sbSettingsSave('lv_active_account', lvActiveIdx);
   renderAccountRows();
   flash('accounts-confirm');
   // Auto-discover NMIs for the active account
@@ -682,6 +684,10 @@ async function apiFetchWithAccount(params, acc) {
   return data;
 }
 
+function isoHoursAgo(h) {
+  return new Date(Date.now() - h * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
+}
+
 async function discoverNMIsFromAPI() {
   var statusEl = document.getElementById('nmi-discover-status');
   if (statusEl) { statusEl.textContent = 'Discovering NMIs...'; statusEl.style.display = 'inline'; }
@@ -689,7 +695,8 @@ async function discoverNMIsFromAPI() {
   // Always start with NMIs from Supabase (original/default account)
   await loadNMIsFromDB();
 
-  // Then fetch from every saved account
+  // Then fetch from every saved account using a 48-hour window
+  // so all NMIs — even less active ones — are returned by the API
   var accounts = lvAccounts.filter(function(a) { return a.apikey; });
   if (!accounts.length) {
     if (statusEl) statusEl.textContent = knownNMIs.length ? 'Found ' + knownNMIs.length + ' NMI(s)' : 'No accounts configured';
@@ -697,17 +704,18 @@ async function discoverNMIsFromAPI() {
     return;
   }
 
+  var from = isoHoursAgo(48);
   var errors = 0;
   for (var i = 0; i < accounts.length; i++) {
     try {
-      var data = await apiFetchWithAccount({NMI: '*'}, accounts[i]);
+      var data = await apiFetchWithAccount({NMI: '*', from: from}, accounts[i]);
       if (Array.isArray(data) && data.length) updateKnownNMIs(data);
     } catch(e) { errors++; }
   }
 
   renderSettingsNMIs();
   if (statusEl) {
-    statusEl.textContent = 'Found ' + knownNMIs.length + ' NMI(s) across ' + accounts.length + ' account(s)' + (errors ? ' (' + errors + ' error(s))' : '');
+    statusEl.textContent = 'Found ' + knownNMIs.length + ' NMI(s) across ' + accounts.length + ' account(s)' + (errors ? ' (' + errors + ' failed)' : '');
   }
 }
 
@@ -735,6 +743,53 @@ function setActiveAccount(idx) {
 }
 
 function hasSB() { return !!(sbUrl && sbKey); }
+
+// ---- Cross-device settings sync via Supabase lv_settings table ----
+async function sbSettingsSave(key, value) {
+  if (!hasSB()) return;
+  try {
+    await fetch(sbUrl + '/rest/v1/lv_settings', {
+      method: 'POST',
+      headers: {
+        'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ key: key, value: JSON.stringify(value), updated_at: new Date().toISOString() })
+    });
+  } catch(e) { console.warn('Settings sync save failed:', e); }
+}
+
+async function sbSettingsLoad(key) {
+  if (!hasSB()) return null;
+  try {
+    var res = await fetch(sbUrl + '/rest/v1/lv_settings?key=eq.' + encodeURIComponent(key) + '&select=value&limit=1', {
+      headers: { 'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey, 'Accept': 'application/json' }
+    });
+    var rows = await res.json();
+    if (Array.isArray(rows) && rows.length) return JSON.parse(rows[0].value);
+  } catch(e) { console.warn('Settings sync load failed:', e); }
+  return null;
+}
+
+async function syncSettingsFromSupabase() {
+  if (!hasSB()) return;
+  var accounts = await sbSettingsLoad('lv_accounts');
+  if (accounts && Array.isArray(accounts)) {
+    lvAccounts = accounts;
+    try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
+  }
+  var names = await sbSettingsLoad('lv_nmi_names');
+  if (names && typeof names === 'object') {
+    nmiNames = names;
+    try { localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames)); } catch(e) {}
+  }
+  var activeIdx = await sbSettingsLoad('lv_active_account');
+  if (activeIdx !== null && !isNaN(parseInt(activeIdx))) {
+    lvActiveIdx = parseInt(activeIdx);
+    try { localStorage.setItem('lv_active_account', String(lvActiveIdx)); } catch(e) {}
+  }
+}
 
 function saveSupabase() {
   sbUrl = document.getElementById('sb-url').value.trim().replace(/\/$/,'');
@@ -795,6 +850,7 @@ function renderSettingsNMIs() {
 function saveNames() {
   knownNMIs.forEach(function(nmi){ var el=document.getElementById('name-'+nmi); if(el) nmiNames[nmi]=el.value.trim(); });
   localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames));
+  sbSettingsSave('lv_nmi_names', nmiNames);
   rebuildSelects();
   flash('names-confirm');
 }
@@ -1403,13 +1459,22 @@ if (hasSB()) { loadNMIsFromDB().then(loadDaily); }
 checkLastSync();
 setInterval(checkLastSync, 60*1000);
 
-// Silently discover NMIs from all saved accounts in the background on startup
+// Silently sync settings from Supabase then discover all NMIs on startup
 (async function() {
+  // Pull latest settings from Supabase (overrides local cache with shared values)
+  await syncSettingsFromSupabase();
+  // Seed Wilsons default if still no accounts after sync
+  if (!lvAccounts.length) {
+    lvAccounts = [{ label: 'Wilsons', partner: '140046', apikey: 'e3c7ea100a1e29e297bfe71b8aa6c2da' }];
+    try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
+  }
+  rebuildActiveAccountSelect();
   await loadNMIsFromDB();
   var accounts = lvAccounts.filter(function(a) { return a.apikey; });
+  var from = isoHoursAgo(48);
   for (var i = 0; i < accounts.length; i++) {
     try {
-      var data = await apiFetchWithAccount({NMI: '*'}, accounts[i]);
+      var data = await apiFetchWithAccount({NMI: '*', from: from}, accounts[i]);
       if (Array.isArray(data) && data.length) updateKnownNMIs(data);
     } catch(e) {}
   }
