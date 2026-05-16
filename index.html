@@ -557,7 +557,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
         </div>
         <div class="settings-section">
           <div class="settings-title">LocalVolts API accounts</div>
-          <div class="settings-hint" style="margin-bottom:12px;">Add one entry per account. The active account is used for all live data fetches.</div>
+          <div class="settings-hint" style="margin-bottom:12px;">Add one entry per account. All accounts are fetched simultaneously — data from every account appears together.</div>
           <div id="lv-account-rows"></div>
           <button class="btn btn-ghost" onclick="addAccountRow()" style="margin-top:10px;">+ Add account</button>
           <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -633,11 +633,15 @@ function renderAccountRows() {
     c.innerHTML = '<p style="font-size:12px;color:var(--text3);">No accounts added yet.</p>';
   } else {
     c.innerHTML = lvAccounts.map(function(acc, i) {
-      return '<div class="settings-row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;" id="acc-row-'+i+'">' +
-        '<input type="text" class="settings-input" style="width:120px;" placeholder="Label" id="acc-label-'+i+'" value="'+escHtml(acc.label||'')+'">' +
-        '<input type="text" class="settings-input" style="width:90px;" placeholder="Partner ID" id="acc-partner-'+i+'" value="'+escHtml(acc.partner||'')+'">' +
-        '<input type="text" class="settings-input" style="width:220px;" placeholder="API key" id="acc-apikey-'+i+'" value="'+escHtml(acc.apikey||'')+'">' +
-        '<button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;color:var(--red,#e55);" onclick="removeAccountRow('+i+')">Remove</button>' +
+      return '<div style="margin-bottom:12px;" id="acc-row-'+i+'">' +
+        '<div class="settings-row" style="flex-wrap:wrap;gap:6px;align-items:center;">' +
+          '<input type="text" class="settings-input" style="width:120px;" placeholder="Label" id="acc-label-'+i+'" value="'+escHtml(acc.label||'')+'">' +
+          '<input type="text" class="settings-input" style="width:90px;" placeholder="Partner ID" id="acc-partner-'+i+'" value="'+escHtml(acc.partner||'')+'">' +
+          '<input type="text" class="settings-input" style="width:220px;" placeholder="API key" id="acc-apikey-'+i+'" value="'+escHtml(acc.apikey||'')+'">' +
+          '<button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="testAccountAPI('+i+')">Test</button>' +
+          '<button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;color:var(--red,#e55);" onclick="removeAccountRow('+i+')">Remove</button>' +
+        '</div>' +
+        '<div id="acc-test-'+i+'" style="font-family:var(--mono);font-size:11px;margin-top:4px;display:none;padding:6px 8px;background:var(--bg2,#f5f5f5);border-radius:4px;white-space:pre-wrap;word-break:break-all;"></div>' +
       '</div>';
     }).join('');
   }
@@ -706,13 +710,24 @@ async function discoverNMIsFromAPI() {
     return;
   }
 
-  var from = isoHoursAgo(48);
-  var errors = 0;
+  var from = isoHoursAgo(70); // 70hrs = just under the 72hr API limit
+  var results = [];
   for (var i = 0; i < accounts.length; i++) {
+    var acc = accounts[i];
+    var label = acc.label || ('Account '+(i+1));
     try {
-      var data = await apiFetchWithAccount({NMI: '*', from: from}, accounts[i]);
-      if (Array.isArray(data) && data.length) updateKnownNMIs(data);
-    } catch(e) { errors++; }
+      var data = await apiFetchWithAccount({NMI: '*', from: from}, acc);
+      if (Array.isArray(data) && data.length) {
+        var before = knownNMIs.length;
+        updateKnownNMIs(data);
+        var found = knownNMIs.length - before;
+        results.push(label + ': ' + knownNMIs.filter(function(n,_,arr){ return arr.indexOf(n)>=0; }).length + ' NMI(s)');
+      } else {
+        results.push(label + ': no data returned');
+      }
+    } catch(e) {
+      results.push(label + ': ERROR — ' + e.message);
+    }
   }
 
   // Push discovered NMIs to Supabase so other devices get them too
@@ -720,7 +735,7 @@ async function discoverNMIsFromAPI() {
 
   renderSettingsNMIs();
   if (statusEl) {
-    statusEl.textContent = 'Found ' + knownNMIs.length + ' NMI(s) across ' + accounts.length + ' account(s)' + (errors ? ' (' + errors + ' failed)' : '');
+    statusEl.textContent = knownNMIs.length + ' NMI(s) found — ' + results.join(', ');
     statusEl.style.display = 'inline';
   }
 }
@@ -733,12 +748,64 @@ function renderSidebarAccounts() {
     return;
   }
   el.innerHTML = lvAccounts.map(function(acc, i) {
-    var isActive = (i === lvActiveIdx);
-    return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">' +
-      '<span style="width:6px;height:6px;border-radius:50%;background:' + (isActive ? '#22c55e' : '#475569') + ';display:inline-block;flex-shrink:0;"></span>' +
-      '<span style="font-family:var(--mono);font-size:11px;color:' + (isActive ? '#94a3b8' : '#64748b') + ';">' + escHtml(acc.label || 'Account '+(i+1)) + '</span>' +
+    var ok = !!(acc.apikey && acc.partner);
+    return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">' +
+      '<span style="width:7px;height:7px;border-radius:50%;background:' + (ok ? '#22c55e' : '#ef4444') + ';display:inline-block;flex-shrink:0;"></span>' +
+      '<span style="font-family:var(--mono);font-size:11px;color:' + (ok ? '#94a3b8' : '#ef4444') + ';">' +
+        escHtml(acc.label || 'Account '+(i+1)) +
+        (!ok ? ' ⚠ missing info' : '') +
+      '</span>' +
     '</div>';
   }).join('');
+}
+
+async function testAccountAPI(i) {
+  var out = document.getElementById('acc-test-'+i);
+  if (!out) return;
+  out.style.display = 'block';
+  out.style.color = 'var(--text3)';
+  out.textContent = 'Testing...';
+  var acc = {
+    label:   (document.getElementById('acc-label-'+i)||{value:''}).value.trim(),
+    partner: (document.getElementById('acc-partner-'+i)||{value:''}).value.trim(),
+    apikey:  (document.getElementById('acc-apikey-'+i)||{value:''}).value.trim()
+  };
+  if (!acc.apikey || !acc.partner) {
+    out.textContent = '⚠ Fill in Partner ID and API key first.';
+    return;
+  }
+  try {
+    var from = isoHoursAgo(70);
+    var p = { NMI: '*', from: from, _apikey: acc.apikey, _partner: acc.partner };
+    var res = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
+    var text = await res.text();
+    var data; try { data = JSON.parse(text); } catch(e) { data = null; }
+    if (!res.ok) {
+      out.style.color = '#e55';
+      out.textContent = '✗ HTTP ' + res.status + ' — ' + text.slice(0, 300);
+      return;
+    }
+    if (!Array.isArray(data) || !data.length) {
+      out.style.color = 'orange';
+      out.textContent = '⚠ No data returned. Response: ' + text.slice(0, 200);
+      return;
+    }
+    var nmis = [];
+    data.forEach(function(d) { var n = d.NMI||d.nmi; if (n && nmis.indexOf(n)===-1) nmis.push(n); });
+    if (!nmis.length) {
+      out.style.color = 'orange';
+      out.textContent = '⚠ Got ' + data.length + ' rows but no NMI field found.\nFirst row keys: ' + Object.keys(data[0]).join(', ');
+    } else {
+      out.style.color = '#22c55e';
+      out.textContent = '✓ Connected — ' + data.length + ' rows, NMIs: ' + nmis.join(', ');
+      updateKnownNMIs(data);
+      renderSettingsNMIs();
+      sbSettingsSave('lv_known_nmis', knownNMIs);
+    }
+  } catch(e) {
+    out.style.color = '#e55';
+    out.textContent = '✗ Error: ' + e.message;
+  }
 }
 
 function rebuildActiveAccountSelect() {
@@ -813,10 +880,18 @@ async function syncSettingsFromSupabase(showStatus) {
   try {
     if (showStatus) setSyncStatus('Syncing from Supabase…');
 
-    var accounts = await sbSettingsLoad('lv_accounts');
-    if (accounts && Array.isArray(accounts) && accounts.length) {
-      lvAccounts = accounts;
+    var remoteAccounts = await sbSettingsLoad('lv_accounts');
+    if (remoteAccounts && Array.isArray(remoteAccounts)) {
+      // Merge: keep all accounts from both local and remote, deduped by partner ID
+      var merged = remoteAccounts.slice();
+      lvAccounts.forEach(function(local) {
+        var exists = merged.some(function(r) { return r.partner === local.partner; });
+        if (!exists && local.partner) merged.push(local);
+      });
+      lvAccounts = merged;
       try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
+      // Push merged result back so Supabase always has the full list
+      sbSettingsSave('lv_accounts', lvAccounts);
     }
 
     var names = await sbSettingsLoad('lv_nmi_names');
@@ -998,16 +1073,43 @@ async function sbQuery(table, fromTs, toTs, nmiFilter, limitN, selectCols, extra
 }
 
 async function apiFetch(params) {
-  var p = Object.assign({}, params);
-  var acc = getActiveAccount();
-  if (acc && acc.apikey) p._apikey = acc.apikey;
-  if (acc && acc.partner) p._partner = acc.partner;
-  var qs='?'+new URLSearchParams(p).toString();
-  var res=await fetch(PROXY+qs);
-  var text=await res.text();
-  var data; try{data=JSON.parse(text);}catch(e){throw new Error('Invalid response: '+text.slice(0,200));}
-  if(!res.ok) throw new Error((data&&(data.message||data.error))||'HTTP '+res.status);
-  if(Array.isArray(data)&&data.length>0&&data[0].error) throw new Error(data[0].error);
+  // Fetch from ALL configured accounts in parallel and merge results.
+  // This means every account is always active — no single "active" account needed.
+  var accounts = lvAccounts.filter(function(a) { return a.apikey && a.partner; });
+  if (!accounts.length) {
+    // Fallback: use proxy defaults (env vars)
+    accounts = [{}];
+  }
+
+  var allResults = await Promise.all(accounts.map(function(acc) {
+    return apiFetchWithAccount(params, acc).catch(function() { return []; });
+  }));
+
+  // Merge all results, deduplicated by NMI+intervalEnd
+  var seen = {};
+  var data = [];
+  allResults.forEach(function(rows) {
+    if (!Array.isArray(rows)) return;
+    rows.forEach(function(row) {
+      var key = (row.NMI||row.nmi||'') + '|' + (row.intervalEnd||'');
+      if (!seen[key]) { seen[key] = true; data.push(row); }
+    });
+  });
+
+  if(!data.length && accounts.length === 1) {
+    // Single account returned nothing — surface any error from a direct call
+    var p = Object.assign({}, params);
+    var acc = accounts[0];
+    if (acc && acc.apikey) p._apikey = acc.apikey;
+    if (acc && acc.partner) p._partner = acc.partner;
+    var qs='?'+new URLSearchParams(p).toString();
+    var res=await fetch(PROXY+qs);
+    var text=await res.text();
+    var errData; try{errData=JSON.parse(text);}catch(e){throw new Error('Invalid response: '+text.slice(0,200));}
+    if(!res.ok) throw new Error((errData&&(errData.message||errData.error))||'HTTP '+res.status);
+    if(Array.isArray(errData)&&errData.length>0&&errData[0].error) throw new Error(errData[0].error);
+    return errData;
+  }
   if(!Array.isArray(data)||data.length===0) throw new Error('No data returned.');
   return data;
 }
