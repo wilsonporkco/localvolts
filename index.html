@@ -302,13 +302,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
     </div>
     <nav class="nav">
       <div class="nav-section">Monitor</div>
-      <button class="nav-item" onclick="switchPanel('comparison',this)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        Comparison
-      </button>
       <button class="nav-item active" onclick="switchPanel('live',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
         Live
+      </button>
+      <button class="nav-item" onclick="switchPanel('comparison',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Comparison
       </button>
       <div class="nav-section">Reports</div>
       <button class="nav-item" onclick="switchPanel('daily',this)">
@@ -1275,12 +1275,12 @@ async function loadComparison() {
     var to = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
     var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
-    // Only Act quality — confirmed NEM-settled data
+    // Exclude forecast-only — include both Act (settled) and Exp (estimated)
     var rows = await sbQuery('lv_intervals', from, to, null, 100000,
-      'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents',
-      ['quality=eq.Act']);
+      'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
+      ['quality=neq.Fcst', 'interval_end=lt.' + to]);
 
-    if (!rows.length) throw new Error('No confirmed (Act) data found in the last ' + daysBack + ' days. Check back after NEM settlement (1–3 days).');
+    if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
     // Aggregate by AEST day × NMI
     var dayNmi = {};
@@ -1290,11 +1290,13 @@ async function loadComparison() {
       var nmi = r.nmi; if (!nmi) return;
       nmiSet[nmi] = true;
       if (!dayNmi[day]) dayNmi[day] = {};
-      if (!dayNmi[day][nmi]) dayNmi[day][nmi] = { imports: 0, exports: 0, costs: 0, earnings: 0 };
+      if (!dayNmi[day][nmi]) dayNmi[day][nmi] = { imports: 0, exports: 0, costs: 0, earnings: 0, quality: 'Act' };
       dayNmi[day][nmi].imports  += parseFloat(r.imports_kwh)  || 0;
       dayNmi[day][nmi].exports  += parseFloat(r.exports_kwh)  || 0;
       dayNmi[day][nmi].costs    += parseFloat(r.costs_cents)   || 0;
       dayNmi[day][nmi].earnings += parseFloat(r.earnings_cents)|| 0;
+      // If any interval is Exp, mark the day as Exp
+      if (r.quality === 'Exp') dayNmi[day][nmi].quality = 'Exp';
     });
 
     var days = Object.keys(dayNmi).sort().reverse(); // newest first
@@ -1312,7 +1314,7 @@ async function loadComparison() {
       thead += '<th class="num" style="' + bl + '">Used kWh</th>';
       thead += '<th class="num">Sold kWh</th>';
       thead += '<th class="num">Cost</th>';
-      thead += '<th class="num">¢/kWh</th>';
+      thead += '<th class="num">$/kWh</th>';
     });
     thead += '</tr>';
 
@@ -1329,16 +1331,18 @@ async function loadComparison() {
         var bl = 'border-left:2px solid #e5e7eb;';
         var nmiKey = nmiNames[nmi] || nmi;
         if (d) {
-          var cPerKwh = d.imports > 0 ? (d.costs / d.imports) : 0;
+          var dolPerKwh = d.imports > 0 ? (d.costs / 100 / d.imports) : 0;
           var costDollars = d.costs / 100;
-          row += '<td class="num" style="' + bl + '">' + d.imports.toFixed(2) + '</td>';
+          var qStyle = d.quality === 'Act' ? 'background:#d1fae5;color:#065f46;' : 'background:#fef3c7;color:#92400e;';
+          var qBadge = '<span style="font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;' + qStyle + '">' + d.quality + '</span>';
+          row += '<td class="num" style="' + bl + '">' + d.imports.toFixed(2) + ' ' + qBadge + '</td>';
           row += '<td class="num">' + d.exports.toFixed(2) + '</td>';
           row += '<td class="num">$' + costDollars.toFixed(2) + '</td>';
-          row += '<td class="num">' + cPerKwh.toFixed(1) + '</td>';
+          row += '<td class="num">$' + dolPerKwh.toFixed(3) + '</td>';
           csvRow[nmiKey + '_used_kwh']  = d.imports.toFixed(3);
           csvRow[nmiKey + '_sold_kwh']  = d.exports.toFixed(3);
           csvRow[nmiKey + '_cost_$']    = costDollars.toFixed(4);
-          csvRow[nmiKey + '_c_per_kwh'] = cPerKwh.toFixed(2);
+          csvRow[nmiKey + '_$_per_kwh'] = dolPerKwh.toFixed(4);
         } else {
           row += '<td class="num" style="' + bl + '">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>';
           csvRow[nmiKey + '_used_kwh'] = ''; csvRow[nmiKey + '_sold_kwh'] = '';
@@ -1356,9 +1360,9 @@ async function loadComparison() {
       var totI = 0, totE = 0, totC = 0;
       days.forEach(function(d) { var x=dayNmi[d][nmi]; if(x){totI+=x.imports;totE+=x.exports;totC+=x.costs;} });
       var name = nmiNames[nmi] ? escHtml(nmiNames[nmi]) : nmi;
-      var avgC = totI > 0 ? (totC / totI) : 0;
+      var avgDolPerKwh = totI > 0 ? (totC / 100 / totI) : 0;
       totalsRow += mCard(name + ' · used', totI.toFixed(1), 'kWh total', '') +
-                   mCard(name + ' · avg cost', avgC.toFixed(1), '¢ / kWh', 'amber');
+                   mCard(name + ' · avg cost', '$' + avgDolPerKwh.toFixed(3), '$ / kWh', 'amber');
     });
     totalsRow += '</div>';
 
@@ -1368,7 +1372,7 @@ async function loadComparison() {
     document.getElementById('comparison-loading').style.display = 'none';
     document.getElementById('comparison-content').style.display = 'block';
     setDot('comparison-dot', 'ok');
-    setTxt('comparison-status', days.length + ' days · ' + nmis.length + ' NMI(s) · Act only');
+    setTxt('comparison-status', days.length + ' days · ' + nmis.length + ' NMI(s)');
   } catch(err) {
     document.getElementById('comparison-loading').style.display = 'none';
     showErr('comparison-error', err.message);
@@ -1972,13 +1976,13 @@ async function checkLastSync() {
 
 <!-- Mobile bottom navigation -->
 <nav class="mobile-nav" id="mobile-nav">
-  <button class="mobile-nav-item" id="mob-comparison" onclick="switchPanel('comparison',null,'mob-comparison')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-    Compare
-  </button>
   <button class="mobile-nav-item active" id="mob-live" onclick="switchPanel('live',null,'mob-live')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
     Live
+  </button>
+  <button class="mobile-nav-item" id="mob-comparison" onclick="switchPanel('comparison',null,'mob-comparison')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Compare
   </button>
   <button class="mobile-nav-item" id="mob-daily" onclick="switchPanel('daily',null,'mob-daily')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
