@@ -23,6 +23,7 @@ jobs:
 
       - name: Run live sync (6hr lookback)
         env:
+          LV_ACCOUNTS:   ${{ secrets.LV_ACCOUNTS }}
           LV_API_KEY:    ${{ secrets.LV_API_KEY }}
           LV_PARTNER:    ${{ secrets.LV_PARTNER }}
           SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
