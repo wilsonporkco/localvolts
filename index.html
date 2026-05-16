@@ -326,8 +326,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
       </button>
     </nav>
     <div class="sidebar-footer">
-      <div class="partner-badge">Partner ID</div>
-      <div class="partner-id" style="font-family:var(--mono);font-size:12px;color:#94a3b8;margin-bottom:12px;">140046</div>
+      <div class="partner-badge" style="margin-bottom:4px;">Accounts</div>
+      <div id="sidebar-accounts" style="margin-bottom:12px;"></div>
       <div style="font-family:var(--mono);font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Last DB sync</div>
       <div id="last-sync-time" style="font-family:var(--mono);font-size:11px;color:#94a3b8;">Checking...</div>
       <div style="width:6px;height:6px;border-radius:50%;background:#64748b;display:inline-block;margin-top:8px;" id="sync-dot"></div>
@@ -715,10 +715,30 @@ async function discoverNMIsFromAPI() {
     } catch(e) { errors++; }
   }
 
+  // Push discovered NMIs to Supabase so other devices get them too
+  sbSettingsSave('lv_known_nmis', knownNMIs);
+
   renderSettingsNMIs();
   if (statusEl) {
     statusEl.textContent = 'Found ' + knownNMIs.length + ' NMI(s) across ' + accounts.length + ' account(s)' + (errors ? ' (' + errors + ' failed)' : '');
+    statusEl.style.display = 'inline';
   }
+}
+
+function renderSidebarAccounts() {
+  var el = document.getElementById('sidebar-accounts');
+  if (!el) return;
+  if (!lvAccounts.length) {
+    el.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:#64748b;">None configured</div>';
+    return;
+  }
+  el.innerHTML = lvAccounts.map(function(acc, i) {
+    var isActive = (i === lvActiveIdx);
+    return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">' +
+      '<span style="width:6px;height:6px;border-radius:50%;background:' + (isActive ? '#22c55e' : '#475569') + ';display:inline-block;flex-shrink:0;"></span>' +
+      '<span style="font-family:var(--mono);font-size:11px;color:' + (isActive ? '#94a3b8' : '#64748b') + ';">' + escHtml(acc.label || 'Account '+(i+1)) + '</span>' +
+    '</div>';
+  }).join('');
 }
 
 function rebuildActiveAccountSelect() {
@@ -728,6 +748,7 @@ function rebuildActiveAccountSelect() {
   if (!lvAccounts.length) {
     sel.innerHTML = '<option value="">— none —</option>';
     if (lbl) lbl.textContent = '—';
+    renderSidebarAccounts();
     return;
   }
   sel.innerHTML = lvAccounts.map(function(acc, i) {
@@ -735,6 +756,7 @@ function rebuildActiveAccountSelect() {
   }).join('');
   var active = getActiveAccount();
   if (lbl) lbl.textContent = active ? (active.label || 'Account '+(lvActiveIdx+1)) : '—';
+  renderSidebarAccounts();
 }
 
 function setActiveAccount(idx) {
@@ -790,22 +812,43 @@ async function syncSettingsFromSupabase(showStatus) {
   }
   try {
     if (showStatus) setSyncStatus('Syncing from Supabase…');
+
     var accounts = await sbSettingsLoad('lv_accounts');
-    if (accounts && Array.isArray(accounts)) {
+    if (accounts && Array.isArray(accounts) && accounts.length) {
       lvAccounts = accounts;
       try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
     }
+
     var names = await sbSettingsLoad('lv_nmi_names');
     if (names && typeof names === 'object') {
       nmiNames = names;
       try { localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames)); } catch(e) {}
     }
+
     var activeIdx = await sbSettingsLoad('lv_active_account');
     if (activeIdx !== null && !isNaN(parseInt(activeIdx))) {
       lvActiveIdx = parseInt(activeIdx);
       try { localStorage.setItem('lv_active_account', String(lvActiveIdx)); } catch(e) {}
     }
-    if (showStatus) setSyncStatus('✓ Synced from Supabase — accounts and meter names loaded.', 'var(--green)');
+
+    // Also sync discovered NMIs so all devices know about every meter
+    var syncedNMIs = await sbSettingsLoad('lv_known_nmis');
+    if (syncedNMIs && Array.isArray(syncedNMIs)) {
+      syncedNMIs.forEach(function(n) {
+        if (n && knownNMIs.indexOf(n) === -1) knownNMIs.push(n);
+      });
+      try { localStorage.setItem('lv_known_nmis', JSON.stringify(knownNMIs)); } catch(e) {}
+    }
+
+    // Refresh UI if settings panel is open
+    renderAccountRows();
+    rebuildActiveAccountSelect();
+    rebuildSelects();
+    renderSettingsNMIs();
+
+    var nmiCount = knownNMIs.length;
+    var accCount = lvAccounts.length;
+    if (showStatus) setSyncStatus('✓ Synced — ' + accCount + ' account(s), ' + nmiCount + ' NMI(s) loaded.', 'var(--green)');
     return true;
   } catch(e) {
     if (e.message === 'table_missing') {
@@ -818,11 +861,9 @@ async function syncSettingsFromSupabase(showStatus) {
 }
 
 async function syncNow() {
-  var ok = await syncSettingsFromSupabase(true);
-  if (ok) {
-    renderAccountRows();
-    renderSettingsNMIs();
-  }
+  await syncSettingsFromSupabase(true);
+  renderAccountRows();
+  renderSettingsNMIs();
 }
 
 function saveSupabase() {
@@ -1489,21 +1530,29 @@ if (knownNMIs.length) rebuildSelects();
 
 loadLive();
 setInterval(loadLive, 5*60*1000);
-if (hasSB()) { loadNMIsFromDB().then(loadDaily); }
 checkLastSync();
 setInterval(checkLastSync, 60*1000);
 
-// Silently sync settings from Supabase then discover all NMIs on startup
+// On every page load: sync settings from Supabase, discover all NMIs from all
+// accounts, then load daily data. No buttons needed — everything is automatic.
 (async function() {
-  // Pull latest settings from Supabase (overrides local cache with shared values)
-  await syncSettingsFromSupabase(true);
-  // Seed Wilsons default if still no accounts after sync
+  // 1. Pull accounts, meter names and known NMIs from Supabase
+  await syncSettingsFromSupabase(false);
+
+  // 2. Seed Wilsons default if no accounts exist anywhere yet
   if (!lvAccounts.length) {
     lvAccounts = [{ label: 'Wilsons', partner: '140046', apikey: 'e3c7ea100a1e29e297bfe71b8aa6c2da' }];
     try { localStorage.setItem('lv_accounts', JSON.stringify(lvAccounts)); } catch(e) {}
+    sbSettingsSave('lv_accounts', lvAccounts);
   }
+
   rebuildActiveAccountSelect();
+  rebuildSelects();
+
+  // 3. Load NMIs from Supabase DB (covers accounts whose data is synced there)
   await loadNMIsFromDB();
+
+  // 4. Discover NMIs live from every API account (covers accounts not in Supabase)
   var accounts = lvAccounts.filter(function(a) { return a.apikey; });
   var from = isoHoursAgo(48);
   for (var i = 0; i < accounts.length; i++) {
@@ -1512,7 +1561,15 @@ setInterval(checkLastSync, 60*1000);
       if (Array.isArray(data) && data.length) updateKnownNMIs(data);
     } catch(e) {}
   }
+
+  // 5. Push discovered NMIs back to Supabase so all devices stay in sync
+  if (knownNMIs.length) sbSettingsSave('lv_known_nmis', knownNMIs);
+
   rebuildSelects();
+  renderSettingsNMIs();
+
+  // 6. Load daily chart now that we have NMIs
+  if (hasSB()) loadDaily();
 })();
 
 // Auto-refresh daily tab every 5 mins if today is selected
