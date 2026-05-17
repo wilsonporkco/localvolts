@@ -365,6 +365,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
         <div class="error-banner" id="comparison-error"></div>
         <div class="loading-state" id="comparison-loading"><div class="loading-spinner"></div><div class="loading-text">Fetching confirmed data…</div></div>
         <div id="comparison-content" style="display:none;">
+          <div id="comparison-totals" style="margin-bottom:16px;"></div>
           <div class="table-card" style="overflow-x:auto;">
             <div class="table-header">
               <span class="table-title">Actual days · all meters</span>
@@ -377,7 +378,6 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </table>
             </div>
           </div>
-          <div id="comparison-totals" style="margin-top:16px;"></div>
         </div>
       </div>
     </div>
@@ -644,6 +644,7 @@ var dailyChartRows = [];
 var rateSelectionInited = false;
 var knownNMIs = [];
 var nmiNames = {};
+var nmiOrder = {}; // display order for NMIs in Comparison
 var SB_URL_DEFAULT = 'https://zmljvelkbhzalrniebhz.supabase.co';
 var SB_KEY_DEFAULT = 'sb_publishable_bEreuVztnHYoaBYc2ed4_A_jWGByPC-';
 var sbUrl = SB_URL_DEFAULT, sbKey = SB_KEY_DEFAULT;
@@ -653,6 +654,7 @@ var lvAccounts = [];
 var lvActiveIdx = 0;
 
 try { nmiNames = JSON.parse(localStorage.getItem('lv_nmi_names') || '{}'); } catch(e) {}
+try { nmiOrder = JSON.parse(localStorage.getItem('lv_nmi_order') || '{}'); } catch(e) {}
 try { sbUrl = localStorage.getItem('lv_sb_url') || SB_URL_DEFAULT; } catch(e) {}
 try { sbKey = localStorage.getItem('lv_sb_key') || SB_KEY_DEFAULT; } catch(e) {}
 try { lvAccounts = JSON.parse(localStorage.getItem('lv_accounts') || '[]'); } catch(e) {}
@@ -994,6 +996,11 @@ async function syncSettingsFromSupabase(showStatus) {
       nmiNames = names;
       try { localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames)); } catch(e) {}
     }
+    var order = await sbSettingsLoad('lv_nmi_order');
+    if (order && typeof order === 'object') {
+      nmiOrder = order;
+      try { localStorage.setItem('lv_nmi_order', JSON.stringify(nmiOrder)); } catch(e) {}
+    }
 
     var syncedNMIs = await sbSettingsLoad('lv_known_nmis');
     if (syncedNMIs && Array.isArray(syncedNMIs)) {
@@ -1091,7 +1098,10 @@ function renderSettingsNMIs() {
   var c = document.getElementById('nmi-name-rows');
   if (!knownNMIs.length) { c.innerHTML='<p style="font-size:12px;color:var(--text3);">Load the Live tab first.</p>'; return; }
   c.innerHTML = knownNMIs.map(function(nmi){
-    return '<div class="settings-row"><span class="settings-label" style="font-family:var(--mono);font-size:11px;">'+nmi+'</span><input type="text" class="settings-input" id="name-'+nmi+'" value="'+(nmiNames[nmi]||'')+'" placeholder="e.g. Farm House, Solar" /><button onclick="removeNMI(\''+nmi+'\')" style="margin-left:6px;padding:2px 7px;font-size:11px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text3);cursor:pointer;" title="Remove this NMI">✕</button></div>';
+    return '<div class="settings-row"><span class="settings-label" style="font-family:var(--mono);font-size:11px;">'+nmi+'</span>'
+      + '<input type="text" class="settings-input" id="name-'+nmi+'" value="'+(nmiNames[nmi]||'')+'" placeholder="e.g. Farm House, Solar" />'
+      + '<input type="number" id="order-'+nmi+'" value="'+(nmiOrder[nmi]||99)+'" min="1" max="99" style="width:52px;margin-left:6px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:center;" title="Display order in Comparison" />'
+      + '<button onclick="removeNMI(\''+nmi+'\')" style="margin-left:6px;padding:2px 7px;font-size:11px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text3);cursor:pointer;" title="Remove this NMI">✕</button></div>';
   }).join('');
 }
 
@@ -1108,9 +1118,14 @@ function removeNMI(nmi) {
 }
 
 function saveNames() {
-  knownNMIs.forEach(function(nmi){ var el=document.getElementById('name-'+nmi); if(el) nmiNames[nmi]=el.value.trim(); });
+  knownNMIs.forEach(function(nmi){
+    var el=document.getElementById('name-'+nmi); if(el) nmiNames[nmi]=el.value.trim();
+    var oel=document.getElementById('order-'+nmi); if(oel) nmiOrder[nmi]=parseInt(oel.value)||99;
+  });
   localStorage.setItem('lv_nmi_names', JSON.stringify(nmiNames));
+  localStorage.setItem('lv_nmi_order', JSON.stringify(nmiOrder));
   sbSettingsSave('lv_nmi_names', nmiNames);
+  sbSettingsSave('lv_nmi_order', nmiOrder);
   rebuildSelects();
   flash('names-confirm');
 }
@@ -1277,11 +1292,12 @@ async function loadComparison() {
     var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
     // Query the pre-aggregated daily view — 1 row per NMI per day, no row-limit issues
-    var fromAEST = new Date(Date.now() - daysBack * 24 * 3600000);
-    var fromDateStr = new Date(fromAEST.getTime() + 10 * 3600000).toISOString().substring(0, 10);
+    var nowAEST = new Date(Date.now() + 10 * 3600000);
+    var todayStr = nowAEST.toISOString().substring(0, 10);
+    var fromDateStr = new Date(nowAEST.getTime() - daysBack * 24 * 3600000).toISOString().substring(0, 10);
     var rows = await sbQuery('lv_daily', null, null, null, 1000,
       'nmi,aest_date,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      ['aest_date=gte.' + fromDateStr, 'order=aest_date.asc']);
+      ['aest_date=gte.' + fromDateStr, 'aest_date=lte.' + todayStr, 'order=aest_date.asc']);
 
     if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
@@ -1301,8 +1317,8 @@ async function loadComparison() {
       dayNmi[day][nmi].earnings += parseFloat(r.earnings_cents)|| 0;
     });
 
-    var days = Object.keys(dayNmi).sort().reverse(); // newest first
-    var nmis = Object.keys(nmiSet).sort();
+    var days = Object.keys(dayNmi).sort().reverse().slice(0, daysBack); // newest first, capped to selection
+    var nmis = Object.keys(nmiSet).sort(function(a,b){ return (nmiOrder[a]||99)-(nmiOrder[b]||99); });
 
     // Build column headers — NMI label spanning 4 sub-columns each
     var thead = '<tr><th rowspan="2" style="vertical-align:bottom;">Date</th>';
@@ -1883,7 +1899,11 @@ setInterval(checkLastSync, 60*1000);
 
 // Re-sync settings from Supabase every 30 seconds so all computers
 // automatically pick up any changes made on another device
+// Skip if the user is currently on the Settings panel to avoid overwriting input
 setInterval(function() {
+  var settingsActive = document.getElementById('panel-settings') &&
+                       document.getElementById('panel-settings').classList.contains('active');
+  if (settingsActive) return;
   syncSettingsFromSupabase(false).then(function() {
     lvAccounts.forEach(function(acc) {
       if (acc.nmis && acc.nmis.length) updateKnownNMIs(acc.nmis.map(function(n){ return {NMI:n}; }));
