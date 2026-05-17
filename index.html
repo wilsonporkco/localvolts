@@ -1275,29 +1275,29 @@ async function loadComparison() {
     var to = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
     var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
-    // Show all data in the window — quality badges distinguish Act / Exp / Fcst
-    var rows = await sbQuery('lv_intervals', from, to, null, 100000,
-      'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      []);
+    // Query the pre-aggregated daily view — 1 row per NMI per day, no row-limit issues
+    var fromAEST = new Date(Date.now() - daysBack * 24 * 3600000);
+    var fromDateStr = new Date(fromAEST.getTime() + 10 * 3600000).toISOString().substring(0, 10);
+    var rows = await sbQuery('lv_daily', null, null, null, 1000,
+      'nmi,aest_date,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
+      ['aest_date=gte.' + fromDateStr]);
 
     if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
-    // Aggregate by AEST day × NMI
+    // Aggregate by AEST day × NMI (view already pre-aggregated, this just organises into structure)
     var dayNmi = {};
     var nmiSet = {};
     rows.forEach(function(r) {
-      var day = isoDate(toAEST(new Date(r.interval_end)));
+      var day = r.aest_date;
       var nmi = r.nmi; if (!nmi) return;
       nmiSet[nmi] = true;
       if (!dayNmi[day]) dayNmi[day] = {};
-      if (!dayNmi[day][nmi]) dayNmi[day][nmi] = { imports: 0, exports: 0, costs: 0, earnings: 0, quality: 'Act' };
+      // View already gives one pre-aggregated row per NMI per day
+      if (!dayNmi[day][nmi]) dayNmi[day][nmi] = { imports: 0, exports: 0, costs: 0, earnings: 0, quality: r.quality || 'Act' };
       dayNmi[day][nmi].imports  += parseFloat(r.imports_kwh)  || 0;
       dayNmi[day][nmi].exports  += parseFloat(r.exports_kwh)  || 0;
       dayNmi[day][nmi].costs    += parseFloat(r.costs_cents)   || 0;
       dayNmi[day][nmi].earnings += parseFloat(r.earnings_cents)|| 0;
-      // Degrade quality: Act → Exp → Fcst (worst wins)
-      if (r.quality === 'Exp' && dayNmi[day][nmi].quality === 'Act') dayNmi[day][nmi].quality = 'Exp';
-      if (r.quality === 'Fcst') dayNmi[day][nmi].quality = 'Fcst';
     });
 
     var days = Object.keys(dayNmi).sort().reverse(); // newest first
