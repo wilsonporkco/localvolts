@@ -1275,10 +1275,10 @@ async function loadComparison() {
     var to = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
     var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
-    // Exclude forecast-only — include both Act (settled) and Exp (estimated)
+    // Use same filter as weekly/monthly — exclude old Fcst but allow today's forecast
     var rows = await sbQuery('lv_intervals', from, to, null, 100000,
       'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      ['quality=neq.Fcst', 'interval_end=lt.' + to]);
+      ['or=(quality.neq.Fcst,interval_end.gte.' + todayAESTMidnightUTC() + ')']);
 
     if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
