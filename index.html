@@ -394,7 +394,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               <span class="table-title">Actual days · all meters</span>
               <button class="btn btn-ghost" onclick="exportComparisonCSV()" style="font-size:11px;padding:5px 12px;">Export CSV</button>
             </div>
-            <div style="overflow-x:auto;position:relative;">
+            <div style="overflow-x:auto;position:relative;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
               <table class="data-table" id="comparison-table">
                 <thead id="comparison-thead"></thead>
                 <tbody id="comparison-tbody"></tbody>
@@ -496,7 +496,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </div>
             </div>
             <div class="collapsible-body" id="daily-table-body" style="max-height:0;overflow:hidden;">
-              <div style="overflow-x:auto;max-height:380px;overflow-y:auto;">
+              <div style="overflow-x:auto;max-height:380px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
                   <thead><tr><th>Time (AEST)</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Cost (c)</th><th class="num">Earnings (c)</th><th class="num">Cost rate</th><th class="num">Earn rate</th><th>Quality</th></tr></thead>
                   <tbody id="daily-tbody"></tbody>
@@ -547,7 +547,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </div>
             </div>
             <div class="collapsible-body" id="weekly-table-body" style="max-height:0;overflow:hidden;">
-              <div style="overflow-x:auto;">
+              <div style="overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
                   <thead><tr><th>Day</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs (c)</th><th class="num">Earnings (c)</th><th class="num">Net (c)</th><th class="num">Emissions (g)</th></tr></thead>
                   <tbody id="weekly-tbody"></tbody>
@@ -598,7 +598,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </div>
             </div>
             <div class="collapsible-body" id="monthly-table-body" style="max-height:0;overflow:hidden;">
-              <div style="overflow-x:auto;">
+              <div style="overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
                   <thead><tr><th>Date</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs (c)</th><th class="num">Earnings (c)</th><th class="num">Net (c)</th><th class="num">Emissions (g)</th></tr></thead>
                   <tbody id="monthly-tbody"></tbody>
