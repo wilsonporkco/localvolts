@@ -347,7 +347,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
       <div class="page-header">
         <div>
           <div class="page-title">Comparison</div>
-          <div class="page-sub">Confirmed actual data · NMIs side by side · AEST</div>
+          <div class="page-sub">All available data · Act / Exp / Fcst · NMIs side by side · AEST</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div class="filter-group"><span class="filter-label">Days back</span>
@@ -1275,10 +1275,10 @@ async function loadComparison() {
     var to = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
     var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
-    // Use same filter as weekly/monthly — exclude old Fcst but allow today's forecast
+    // Show all data in the window — quality badges distinguish Act / Exp / Fcst
     var rows = await sbQuery('lv_intervals', from, to, null, 100000,
       'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      ['or=(quality.neq.Fcst,interval_end.gte.' + todayAESTMidnightUTC() + ')']);
+      []);
 
     if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
@@ -1295,8 +1295,9 @@ async function loadComparison() {
       dayNmi[day][nmi].exports  += parseFloat(r.exports_kwh)  || 0;
       dayNmi[day][nmi].costs    += parseFloat(r.costs_cents)   || 0;
       dayNmi[day][nmi].earnings += parseFloat(r.earnings_cents)|| 0;
-      // If any interval is Exp, mark the day as Exp
-      if (r.quality === 'Exp') dayNmi[day][nmi].quality = 'Exp';
+      // Degrade quality: Act → Exp → Fcst (worst wins)
+      if (r.quality === 'Exp' && dayNmi[day][nmi].quality === 'Act') dayNmi[day][nmi].quality = 'Exp';
+      if (r.quality === 'Fcst') dayNmi[day][nmi].quality = 'Fcst';
     });
 
     var days = Object.keys(dayNmi).sort().reverse(); // newest first
@@ -1333,7 +1334,7 @@ async function loadComparison() {
         if (d) {
           var dolPerKwh = d.imports > 0 ? (d.costs / 100 / d.imports) : 0;
           var costDollars = d.costs / 100;
-          var qStyle = d.quality === 'Act' ? 'background:#d1fae5;color:#065f46;' : 'background:#fef3c7;color:#92400e;';
+          var qStyle = d.quality === 'Act' ? 'background:#d1fae5;color:#065f46;' : d.quality === 'Exp' ? 'background:#fef3c7;color:#92400e;' : 'background:#f3f4f6;color:#6b7280;';
           var qBadge = '<span style="font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;' + qStyle + '">' + d.quality + '</span>';
           row += '<td class="num" style="' + bl + '">' + d.imports.toFixed(2) + ' ' + qBadge + '</td>';
           row += '<td class="num">' + d.exports.toFixed(2) + '</td>';
