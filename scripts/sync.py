@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Localvolts -> Supabase sync script.
+Localvolts → Supabase sync script.
 
 Two modes:
   HOURS_BACK=0  : Default fetch (6hr lookback + 24hr forecast). Run every 30 mins.
-  HOURS_BACK=N  : Historical backfill -- loops day by day using AEST boundaries.
+  HOURS_BACK=N  : Historical backfill — loops day by day using AEST boundaries.
 
 Multi-account support:
   Set LV_ACCOUNTS as a JSON array of account objects, e.g.:
@@ -13,7 +13,7 @@ Multi-account support:
   If LV_ACCOUNTS is not set, falls back to the single-account env vars:
     LV_API_KEY, LV_PARTNER, LV_NMI
 
-Only 5-minute intervals are saved -- 30-min intervals overlap with 5-min data
+Only 5-minute intervals are saved — 30-min intervals overlap with 5-min data
 and cause double-counting in the dashboard.
 """
 
@@ -37,17 +37,24 @@ def supabase_get_setting(key):
         with urllib.request.urlopen(req, timeout=15) as r:
             rows = json.loads(r.read())
             if rows and isinstance(rows, list):
-                return rows[0].get("value")
+                val = rows[0].get("value")
+                # value column may be stored as a JSON string (text) or already parsed (jsonb)
+                if isinstance(val, str):
+                    try:
+                        return json.loads(val)
+                    except Exception:
+                        return val
+                return val
     except Exception as e:
         print(f"  WARNING: Could not read {key} from Supabase: {e}")
     return None
 
-# Build accounts list -- priority order:
+# Build accounts list — priority order:
 #   1. lv_accounts saved in Supabase (added via dashboard settings UI)
 #   2. LV_ACCOUNTS env var (manual override / bootstrap)
 #   3. Single-account LV_API_KEY / LV_PARTNER / LV_NMI env vars (legacy fallback)
 def load_accounts():
-    # 1. Try Supabase first -- this is the live source updated by the dashboard
+    # 1. Try Supabase first — this is the live source updated by the dashboard
     sb_accounts = supabase_get_setting("lv_accounts")
     if sb_accounts is None:
         print("  Supabase lv_accounts: not found (key missing or read failed)")
@@ -92,7 +99,7 @@ def lv_fetch(account, from_dt=None, to_dt=None):
     nmi     = account.get("nmi", "*")
     api_key = account["apikey"]
     partner = account["partner"]
-    # Build query string manually -- urllib encodes colons which breaks the API
+    # Build query string manually — urllib encodes colons which breaks the API
     qs = f"NMI={urllib.parse.quote(nmi)}"
     if from_dt: qs += f"&from={from_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     if to_dt:   qs += f"&to={to_dt.strftime('%Y-%m-%dT%H:%M:%SZ')}"
@@ -180,7 +187,7 @@ def fetch_and_save(account, from_dt=None, to_dt=None, label=""):
         print(f"    API error: {raw[0]['error']}")
         return 0
 
-    # Only keep 5-minute intervals -- 30-min intervals overlap with 5-min data
+    # Only keep 5-minute intervals — 30-min intervals overlap with 5-min data
     # and cause double-counting when both exist for the same time period.
     def is_five_min(r):
         dur = r.get("intervalDuration")
@@ -227,7 +234,7 @@ def sync_account(account, now):
         total = fetch_and_save(account, from_dt=from_dt, label="(live+lookback)")
     else:
         days = max(1, (HOURS_BACK + 23) // 24)
-        print(f"    Mode: historical backfill -- {days} AEST days")
+        print(f"    Mode: historical backfill — {days} AEST days")
 
         for i in range(days - 1, -1, -1):
             aest_date = (now + timedelta(hours=10)).date() - timedelta(days=i)
@@ -239,11 +246,11 @@ def sync_account(account, now):
                 print(f"    Skipping future day {aest_date}")
                 continue
             if now - from_utc > timedelta(hours=71):
-                print(f"    Skipping {aest_date} -- beyond 72h API history limit")
+                print(f"    Skipping {aest_date} — beyond 72h API history limit")
                 continue
             to_utc = min(to_utc, now)
 
-            print(f"    Day {days-i}/{days}: AEST {aest_date}")
+            print(f"    Day {days-i}/{days}: AEST {aest_date} → UTC {from_utc.strftime('%H:%MZ')}–{to_utc.strftime('%H:%MZ')}")
             try:
                 saved = fetch_and_save(account, from_utc, to_utc, f"(AEST {aest_date})")
                 total += saved
@@ -257,7 +264,7 @@ def sync_account(account, now):
 def main():
     now      = datetime.now(timezone.utc)
     accounts = load_accounts()
-    print(f"[{now.isoformat()}] Sync -- {len(accounts)} account(s), HOURS_BACK={HOURS_BACK}")
+    print(f"[{now.isoformat()}] Sync — {len(accounts)} account(s), HOURS_BACK={HOURS_BACK}")
 
     grand_total = 0
     for account in accounts:
