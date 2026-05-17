@@ -1171,7 +1171,8 @@ async function sbQuery(table, fromTs, toTs, nmiFilter, limitN, selectCols, extra
   if (toTs)   parts.push('interval_end=lt.'+toTs);
   if (nmiFilter && nmiFilter!=='*') parts.push('nmi=eq.'+nmiFilter);
   if (extraFilters) extraFilters.forEach(function(f){ parts.push(f); });
-  parts.push('order=interval_end.asc');
+  var hasOrder = extraFilters && extraFilters.some(function(f){ return f.startsWith('order='); });
+  if (!hasOrder) parts.push('order=interval_end.asc');
   parts.push('limit='+(limitN||500));
   var url = sbUrl+'/rest/v1/'+table+'?'+parts.join('&');
   console.log('Supabase URL:', url.substring(0,200));
@@ -1280,7 +1281,7 @@ async function loadComparison() {
     var fromDateStr = new Date(fromAEST.getTime() + 10 * 3600000).toISOString().substring(0, 10);
     var rows = await sbQuery('lv_daily', null, null, null, 1000,
       'nmi,aest_date,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      ['aest_date=gte.' + fromDateStr]);
+      ['aest_date=gte.' + fromDateStr, 'order=aest_date.asc']);
 
     if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
