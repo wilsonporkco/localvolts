@@ -2,13 +2,9 @@ name: Localvolts backfill
 
 on:
   schedule:
-    # Every 5 minutes — keeps all NMIs current and converts Fcst->Exp->Act
-    # as NEM settlement data arrives
-    - cron: '*/5 * * * *'
-  workflow_run:
-    # Also fire after each live sync completes — more reliable than cron alone
-    workflows: ["Localvolts live sync"]
-    types: [completed]
+    # Every 30 minutes — converts Fcst→Exp→Act as NEM settlement data arrives
+    - cron: '15 * * * *'
+    - cron: '45 * * * *'
   workflow_dispatch:
     inputs:
       hours_back:
