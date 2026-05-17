@@ -38,31 +38,31 @@ html { scroll-behavior: smooth; }
 body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.6; }
 
 /* Layout */
-.app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
-.sidebar { background: #1e293b; border-right: none; padding: 28px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+.app { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
+.sidebar { background: #1e293b; border-right: none; padding: 20px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
 .main { overflow: hidden; }
 
 /* Sidebar */
-.logo { padding: 0 24px 28px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 20px; }
-.logo-mark { font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 4px; }
-.logo-name { font-size: 18px; font-weight: 600; color: #f1f5f9; letter-spacing: -0.02em; }
+.logo { padding: 0 18px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px; }
+.logo-mark { font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 2px; }
+.logo-name { font-size: 16px; font-weight: 600; color: #f1f5f9; letter-spacing: -0.02em; }
 
-.nav { flex: 1; padding: 0 12px; }
-.nav-section { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: #64748b; text-transform: uppercase; padding: 0 12px; margin: 16px 0 6px; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; color: #94a3b8; font-size: 13px; font-weight: 400; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; }
+.nav { flex: 1; padding: 0 10px; }
+.nav-section { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: #64748b; text-transform: uppercase; padding: 0 10px; margin: 12px 0 4px; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px; cursor: pointer; color: #94a3b8; font-size: 12px; font-weight: 400; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; }
 .nav-item:hover { background: rgba(255,255,255,0.08); color: #f1f5f9; }
 .nav-item.active { background: rgba(14,165,233,0.15); color: #38bdf8; font-weight: 500; }
-.nav-item svg { width: 15px; height: 15px; opacity: 0.7; flex-shrink: 0; }
+.nav-item svg { width: 14px; height: 14px; opacity: 0.7; flex-shrink: 0; }
 .nav-item.active svg { opacity: 1; }
 
-.sidebar-footer { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.08); }
+.sidebar-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.08); }
 .partner-badge { font-family: var(--mono); font-size: 10px; color: #64748b; }
 .partner-id { color: #94a3b8; font-size: 11px; margin-top: 2px; }
 
 /* Header */
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 28px 32px 24px; border-bottom: 1px solid #f3f4f6; gap: 20px; flex-wrap: wrap; background: #fff; }
-.page-title { font-size: 22px; font-weight: 600; letter-spacing: -0.03em; color: var(--text); text-transform: uppercase; }
-.page-sub { font-size: 12px; color: var(--text3); margin-top: 3px; font-family: var(--mono); }
+.page-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid #f3f4f6; gap: 12px; flex-wrap: wrap; background: #fff; }
+.page-title { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; color: var(--text); text-transform: uppercase; }
+.page-sub { font-size: 11px; color: var(--text3); margin-top: 1px; font-family: var(--mono); }
 .live-badge { display: flex; align-items: center; gap: 6px; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 20px; padding: 5px 12px; font-size: 11px; color: #065f46; font-family: var(--mono); }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -70,10 +70,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 /* Panels */
 .panel { display: none; }
 .panel.active { display: block; }
-.panel-body { padding: 24px 32px; background: var(--bg); min-height: calc(100vh - 80px); }
+.panel-body { padding: 14px 20px; background: var(--bg); min-height: calc(100vh - 52px); }
 
 /* Filter bar */
-.filter-bar { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.filter-bar { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 .filter-group { display: flex; align-items: center; gap: 8px; }
 .filter-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; white-space: nowrap; }
 .filter-bar select, .filter-bar input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; color: var(--text); font-family: var(--font); font-size: 13px; padding: 7px 12px; outline: none; transition: border-color 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
@@ -94,31 +94,30 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .status-dot.err { background: var(--red); }
 
 /* Metric cards */
-.metrics-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 24px; }
-.metric-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px 20px; position: relative; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-.metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-color, var(--accent)); opacity: 0.9; border-radius: 12px 12px 0 0; }
+.metrics-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 14px; }
+.metric-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; position: relative; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-color, var(--accent)); opacity: 0.9; border-radius: 10px 10px 0 0; }
 .metric-card.green::before { --accent-color: var(--green); }
 .metric-card.amber::before { --accent-color: var(--amber); }
 .metric-card.red::before { --accent-color: var(--red); }
 .metric-card.purple::before { --accent-color: var(--purple); }
-.metric-card.amber::before { --accent-color: var(--amber); }
 .metric-card.blue::before { --accent-color: var(--accent2); }
-.metric-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; margin-bottom: 8px; }
-.metric-value { font-size: 22px; font-weight: 600; letter-spacing: -0.03em; color: var(--text); line-height: 1; }
-.metric-unit { font-family: var(--mono); font-size: 11px; color: var(--text3); margin-top: 5px; }
-.metric-delta { font-size: 11px; margin-top: 4px; }
+.metric-label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; color: var(--text3); text-transform: uppercase; margin-bottom: 4px; }
+.metric-value { font-size: 18px; font-weight: 600; letter-spacing: -0.03em; color: var(--text); line-height: 1; }
+.metric-unit { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-top: 3px; }
+.metric-delta { font-size: 10px; margin-top: 2px; }
 .metric-delta.pos { color: var(--green); }
 .metric-delta.neg { color: var(--red); }
 
 /* Summary highlight box */
-.summary-box { background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%); border: 1px solid #bae6fd; border-left: 4px solid var(--accent); border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
-.summary-item-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; margin-bottom: 6px; }
-.summary-item-value { font-size: 28px; font-weight: 600; letter-spacing: -0.04em; color: var(--text); }
-.summary-item-sub { font-family: var(--mono); font-size: 11px; color: var(--text2); margin-top: 3px; }
+.summary-box { background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%); border: 1px solid #bae6fd; border-left: 4px solid var(--accent); border-radius: 10px; padding: 12px 18px; margin-bottom: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+.summary-item-label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; margin-bottom: 3px; }
+.summary-item-value { font-size: 22px; font-weight: 600; letter-spacing: -0.04em; color: var(--text); }
+.summary-item-sub { font-family: var(--mono); font-size: 10px; color: var(--text2); margin-top: 2px; }
 
 /* Charts */
-.chart-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-.chart-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: #6b7280; text-transform: uppercase; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+.chart-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.chart-title { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: #6b7280; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
 .chart-legend { display: flex; gap: 16px; }
 .chart-legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6b7280; }
 .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
@@ -145,15 +144,15 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .quality-pill.Fcst { background: #e0f2fe; color: #0369a1; }
 
 /* Live panel */
-.live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-@media (max-width: 800px) { .live-grid { grid-template-columns: 1fr; } }
-.detail-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-.detail-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--text3); text-transform: uppercase; margin-bottom: 12px; }
-.detail-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
+.live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+@media (max-width: 800px) { .live-grid { grid-template-columns: 1fr 1fr; } }
+.detail-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.detail-title { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: var(--text3); text-transform: uppercase; margin-bottom: 8px; }
+.detail-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f3f4f6; font-size: 11px; }
 .detail-row:last-child { border-bottom: none; }
-.detail-key { color: #6b7280; font-family: var(--mono); font-size: 11px; }
-.detail-val { color: var(--text); font-family: var(--mono); font-size: 11px; font-weight: 500; }
-.detail-unit { color: var(--text3); font-size: 10px; margin-left: 4px; }
+.detail-key { color: #6b7280; font-family: var(--mono); font-size: 10px; }
+.detail-val { color: var(--text); font-family: var(--mono); font-size: 10px; font-weight: 500; }
+.detail-unit { color: var(--text3); font-size: 9px; margin-left: 3px; }
 
 /* Loading / error */
 .loading-state { display: none; padding: 48px 32px; text-align: center; }
@@ -186,6 +185,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
 /* Daily panel overrides */
 #panel-daily .metrics-row { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 768px) { #panel-daily .metrics-row { grid-template-columns: repeat(2, 1fr); } }
 
 /* Chart selection summary */
 .sel-summary { padding: 12px 0 4px; border-top: 1px solid #f3f4f6; margin-top: 8px; }
@@ -241,53 +241,72 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .mobile-nav-item.active { color: #38bdf8; }
 .mobile-nav-item:active { opacity: 0.7; }
 
-/* Responsive */
+/* Tablet (769px – 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .app { grid-template-columns: 170px 1fr; }
+  .logo-name { font-size: 14px; }
+  .nav-item { font-size: 11px; padding: 6px 8px; }
+  .metrics-row { grid-template-columns: repeat(3, 1fr); }
+  #panel-daily .metrics-row { grid-template-columns: repeat(4, 1fr); }
+  .panel-body { padding: 12px 16px; }
+  .page-header { padding: 10px 16px; }
+  .two-charts { grid-template-columns: 1fr 1fr; }
+  .live-grid { grid-template-columns: 1fr 1fr; }
+  .btn { padding: 7px 14px; }
+}
+
+/* Mobile (≤768px) */
 @media (max-width: 768px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .mobile-nav { display: flex; }
   .panel-body {
-    padding: 14px 14px;
-    /* leave space for bottom nav + safe area */
-    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding: 10px 10px;
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
   }
   .page-header {
-    padding: 14px 14px;
-    padding-top: calc(14px + env(safe-area-inset-top, 0px));
-    flex-direction: column;
-    gap: 10px;
-    align-items: stretch;
+    padding: 10px 12px;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
   }
   .page-header > div:last-child {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
   }
   /* Larger touch targets */
-  .btn { min-height: 44px; padding: 10px 16px; }
-  select, input { min-height: 44px; }
-  /* Metric cards: 2-col on small screens */
-  .metrics-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .metric-value { font-size: 22px; }
-  /* Live grid: single col */
-  .live-grid { grid-template-columns: 1fr; }
+  .btn { min-height: 40px; padding: 8px 14px; }
+  select, input { min-height: 40px; }
+  /* Metric cards: 3-col on phones */
+  .metrics-row { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .metric-card { padding: 8px 10px; }
+  .metric-value { font-size: 16px; }
+  .metric-label { font-size: 8px; }
+  /* Live grid: 2-col on phones */
+  .live-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
   /* Two-chart grid: single col */
   .two-charts { grid-template-columns: 1fr; }
-  /* Summary box: single col */
-  .summary-box { grid-template-columns: 1fr; gap: 12px; }
-  /* Filter bar: stack label above input */
-  .filter-bar { flex-direction: column; align-items: stretch; gap: 10px; padding: 16px; }
-  .filter-group { flex-direction: column; align-items: flex-start; gap: 5px; }
-  .filter-bar select, .filter-bar input { width: 100%; box-sizing: border-box; min-height: 44px; font-size: 16px; } /* 16px stops iOS zoom */
-  .filter-time-row { gap: 10px; }
-  .page-title { font-size: 18px; }
-  .page-sub { font-size: 11px; }
-  .chart-wrap-daily { height: 220px !important; }
+  /* Summary box: 2-col compact */
+  .summary-box { grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px; }
+  .summary-item-value { font-size: 18px; }
+  /* Filter bar: compact row wrapping */
+  .filter-bar { flex-direction: row; align-items: center; gap: 8px; padding: 8px 12px; flex-wrap: wrap; }
+  .filter-group { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .filter-bar select, .filter-bar input { min-height: 40px; font-size: 16px; } /* 16px stops iOS zoom */
+  .filter-time-row { gap: 8px; }
+  .page-title { font-size: 14px; }
+  .page-sub { display: none; } /* hide subtitle on phones to save space */
+  .chart-wrap-daily { height: 180px !important; }
   /* Settings: stack label above input */
   .settings-row { flex-direction: column; align-items: stretch; gap: 6px; }
   .settings-label { min-width: unset; }
   .settings-input { max-width: 100%; }
   /* Table: allow horizontal scroll */
   .table-card { overflow-x: auto; }
+  /* Chart cards: less padding */
+  .chart-card { padding: 10px 12px; margin-bottom: 8px; }
+  .detail-card { padding: 8px 10px; }
 }
 </style>
 </head>
@@ -416,7 +435,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                 <div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;border:1px dashed #68d391;"></div>Exports</div>
               </div>
             </div>
-            <div class="chart-wrap" style="height:180px;"><canvas id="liveChart" role="img" aria-label="24hr forecast.">Forecast.</canvas></div>
+            <div class="chart-wrap" style="height:150px;"><canvas id="liveChart" role="img" aria-label="24hr forecast.">Forecast.</canvas></div>
           </div>
         </div>
       </div>
@@ -450,7 +469,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <!-- Cost chart: full width + drag selection -->
           <div class="chart-card">
             <div class="chart-title"><span>Cost &amp; earnings rate</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#fc8181;"></div>Cost</div><div class="chart-legend-item"><div class="legend-dot" style="background:#b794f4;"></div>Earnings</div></div><span style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-left:8px;">drag to select</span></div>
-            <div class="chart-wrap" style="height:220px;position:relative;" id="rate-chart-wrap">
+            <div class="chart-wrap" style="height:180px;position:relative;" id="rate-chart-wrap">
               <canvas id="dailyRateChart" role="img" aria-label="Daily rates.">Rates.</canvas>
               <div id="rate-sel-highlight" style="position:absolute;top:0;bottom:0;background:rgba(14,165,233,0.13);border-left:2px solid rgba(14,165,233,0.5);border-right:2px solid rgba(14,165,233,0.5);display:none;pointer-events:none;z-index:1;"></div>
               <div id="rate-sel-overlay" style="position:absolute;top:0;left:0;right:0;bottom:0;cursor:crosshair;z-index:2;touch-action:none;"></div>
@@ -460,7 +479,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <!-- Imports chart: full width below -->
           <div class="chart-card">
             <div class="chart-title"><span>Imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#4fd1c5;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;"></div>Export</div></div></div>
-            <div class="chart-wrap" style="height:220px;"><canvas id="dailyEnergyChart" role="img" aria-label="Daily energy.">Daily energy.</canvas></div>
+            <div class="chart-wrap" style="height:180px;"><canvas id="dailyEnergyChart" role="img" aria-label="Daily energy.">Daily energy.</canvas></div>
           </div>
           <div class="table-card">
             <div class="table-header collapsible-header" onclick="toggleTable('daily-table-body','daily-collapse-btn')">
@@ -506,11 +525,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div class="two-charts">
             <div class="chart-card">
               <div class="chart-title"><span>Daily imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#4fd1c5;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;"></div>Export</div></div></div>
-              <div class="chart-wrap" style="height:200px;"><canvas id="weeklyEnergyChart" role="img" aria-label="Weekly energy.">Weekly energy.</canvas></div>
+              <div class="chart-wrap" style="height:170px;"><canvas id="weeklyEnergyChart" role="img" aria-label="Weekly energy.">Weekly energy.</canvas></div>
             </div>
             <div class="chart-card">
               <div class="chart-title"><span>Daily costs &amp; earnings</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#fc8181;"></div>Cost</div><div class="chart-legend-item"><div class="legend-dot" style="background:#b794f4;"></div>Earnings</div></div></div>
-              <div class="chart-wrap" style="height:200px;"><canvas id="weeklyCostChart" role="img" aria-label="Weekly costs.">Weekly costs.</canvas></div>
+              <div class="chart-wrap" style="height:170px;"><canvas id="weeklyCostChart" role="img" aria-label="Weekly costs.">Weekly costs.</canvas></div>
             </div>
           </div>
           <div class="table-card">
@@ -557,11 +576,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div class="two-charts">
             <div class="chart-card">
               <div class="chart-title"><span>Daily imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#4fd1c5;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;"></div>Export</div></div></div>
-              <div class="chart-wrap" style="height:200px;"><canvas id="monthlyEnergyChart" role="img" aria-label="Monthly energy.">Monthly energy.</canvas></div>
+              <div class="chart-wrap" style="height:170px;"><canvas id="monthlyEnergyChart" role="img" aria-label="Monthly energy.">Monthly energy.</canvas></div>
             </div>
             <div class="chart-card">
               <div class="chart-title"><span>Daily costs &amp; earnings</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#fc8181;"></div>Cost</div><div class="chart-legend-item"><div class="legend-dot" style="background:#b794f4;"></div>Earnings</div></div></div>
-              <div class="chart-wrap" style="height:200px;"><canvas id="monthlyCostChart" role="img" aria-label="Monthly costs.">Monthly costs.</canvas></div>
+              <div class="chart-wrap" style="height:170px;"><canvas id="monthlyCostChart" role="img" aria-label="Monthly costs.">Monthly costs.</canvas></div>
             </div>
           </div>
           <div class="table-card">
