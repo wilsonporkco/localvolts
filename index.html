@@ -1354,7 +1354,7 @@ async function loadComparison() {
       var bl = 'border-left:2px solid #e5e7eb;';
       thead += '<th class="num" style="' + bl + '">Used kWh</th>';
       thead += '<th class="num">Sold kWh</th>';
-      thead += '<th class="num">Cost</th>';
+      thead += '<th class="num">Net Cost</th>';
       thead += '<th class="num">$/kWh</th>';
     });
     thead += '</tr>';
@@ -1372,8 +1372,9 @@ async function loadComparison() {
         var bl = 'border-left:2px solid #e5e7eb;';
         var nmiKey = nmiNames[nmi] || nmi;
         if (d) {
-          var dolPerKwh = d.imports > 0 ? (d.costs / 100 / d.imports) : 0;
-          var costDollars = d.costs / 100;
+          var netCents = d.costs - d.earnings;
+          var dolPerKwh = d.imports > 0 ? (netCents / 100 / d.imports) : 0;
+          var costDollars = netCents / 100;
           var qStyle = d.quality === 'Act' ? 'background:#d1fae5;color:#065f46;' : d.quality === 'Exp' ? 'background:#fef3c7;color:#92400e;' : 'background:#f3f4f6;color:#6b7280;';
           var qBadge = '<span style="font-size:9px;font-family:var(--mono);padding:1px 5px;border-radius:3px;' + qStyle + '">' + d.quality + '</span>';
           row += '<td class="num" style="' + bl + '">' + d.imports.toFixed(2) + ' ' + qBadge + '</td>';
@@ -1395,17 +1396,35 @@ async function loadComparison() {
       return row;
     }).join('');
 
-    // Totals row across all displayed days
-    var totalsRow = '<div class="metrics-row" style="grid-template-columns:repeat('+Math.min(nmis.length*2,6)+',1fr);">';
-    nmis.forEach(function(nmi) {
-      var totI = 0, totE = 0, totC = 0;
-      days.forEach(function(d) { var x=dayNmi[d][nmi]; if(x){totI+=x.imports;totE+=x.exports;totC+=x.costs;} });
+    // Totals row — compact table sorted by cheapest avg net cost per kWh
+    var nmiTotals = nmis.map(function(nmi) {
+      var totI = 0, totE = 0, totC = 0, totEr = 0;
+      days.forEach(function(d) { var x=dayNmi[d][nmi]; if(x){totI+=x.imports;totE+=x.exports;totC+=x.costs;totEr+=x.earnings;} });
       var name = nmiNames[nmi] ? escHtml(nmiNames[nmi]) : nmi;
-      var avgDolPerKwh = totI > 0 ? (totC / 100 / totI) : 0;
-      totalsRow += mCard(name + ' · used', totI.toFixed(1), 'kWh total', '') +
-                   mCard(name + ' · avg cost', '$' + avgDolPerKwh.toFixed(3), '$ / kWh', 'amber');
+      var netCost = (totC - totEr) / 100;
+      var avgDolPerKwh = totI > 0 ? (netCost / totI) : 0;
+      return { name: name, totI: totI, totE: totE, netCost: netCost, avgDolPerKwh: avgDolPerKwh };
     });
-    totalsRow += '</div>';
+    nmiTotals.sort(function(a, b) { return a.avgDolPerKwh - b.avgDolPerKwh; });
+    var totalsRow = '<table class="data-table" style="width:100%;margin-top:4px;">' +
+      '<thead><tr>' +
+      '<th style="text-align:left;">NMI</th>' +
+      '<th class="num">Used kWh</th>' +
+      '<th class="num">Sold kWh</th>' +
+      '<th class="num">Net Cost</th>' +
+      '<th class="num">Avg $/kWh</th>' +
+      '</tr></thead><tbody>';
+    nmiTotals.forEach(function(t, i) {
+      var cheapest = i === 0 ? ' style="color:#065f46;font-weight:600;"' : '';
+      totalsRow += '<tr>' +
+        '<td style="font-size:11px;font-family:var(--mono);white-space:nowrap;"' + cheapest + '>' + t.name + (i === 0 ? ' ★' : '') + '</td>' +
+        '<td class="num">' + t.totI.toFixed(1) + '</td>' +
+        '<td class="num">' + t.totE.toFixed(1) + '</td>' +
+        '<td class="num">$' + t.netCost.toFixed(2) + '</td>' +
+        '<td class="num"' + cheapest + '>$' + t.avgDolPerKwh.toFixed(3) + '</td>' +
+        '</tr>';
+    });
+    totalsRow += '</tbody></table>';
 
     document.getElementById('comparison-thead').innerHTML = thead;
     document.getElementById('comparison-tbody').innerHTML = tbody;
