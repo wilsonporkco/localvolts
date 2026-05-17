@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       hours_back:
-        description: 'Hours of history to fetch (default 96 = 4 days, covers 72h API limit)'
+        description: 'Hours of history to fetch (default 168 = 7 days, covers NEM settlement lag)'
         required: false
-        default: '96'
+        default: '168'
 
 jobs:
   backfill:
@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run backfill (72hr = 3 AEST days)
+      - name: Run backfill (168hr = 7 days, covers full NEM settlement window)
         env:
           LV_ACCOUNTS:   ${{ secrets.LV_ACCOUNTS }}
           LV_API_KEY:    ${{ secrets.LV_API_KEY }}
@@ -34,5 +34,5 @@ jobs:
           SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
           LV_NMI:        "*"
-          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '96' }}
+          LV_HOURS_BACK: ${{ github.event.inputs.hours_back || '168' }}
         run: python scripts/sync.py
