@@ -375,8 +375,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div class="filter-group"><span class="filter-label">Days back</span>
             <select id="comparison-days" onchange="loadComparison()" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 12px;outline:none;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
-              <option value="7">Last 7 days</option>
-              <option value="14" selected>Last 14 days</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="14">Last 14 days</option>
               <option value="30">Last 30 days</option>
             </select>
           </div>
@@ -1403,25 +1403,30 @@ async function loadComparison() {
       var name = nmiNames[nmi] ? escHtml(nmiNames[nmi]) : nmi;
       var netCost = (totC - totEr) / 100;
       var avgDolPerKwh = totI > 0 ? (netCost / totI) : 0;
-      return { name: name, totI: totI, totE: totE, netCost: netCost, avgDolPerKwh: avgDolPerKwh };
+      return { name: name, totI: totI, totE: totE, totC: totC, totEr: totEr, netCost: netCost, avgDolPerKwh: avgDolPerKwh };
     });
     nmiTotals.sort(function(a, b) { return a.avgDolPerKwh - b.avgDolPerKwh; });
     var totalsRow = '<table class="data-table" style="width:100%;margin-top:4px;">' +
       '<thead><tr>' +
       '<th style="text-align:left;">NMI</th>' +
       '<th class="num">Used kWh</th>' +
+      '<th class="num">Used $</th>' +
       '<th class="num">Sold kWh</th>' +
+      '<th class="num">Sold $</th>' +
       '<th class="num">Net Cost</th>' +
       '<th class="num">Avg $/kWh</th>' +
       '</tr></thead><tbody>';
     nmiTotals.forEach(function(t, i) {
-      var cheapest = i === 0 ? ' style="color:#065f46;font-weight:600;"' : '';
-      totalsRow += '<tr>' +
-        '<td style="font-size:11px;font-family:var(--mono);white-space:nowrap;"' + cheapest + '>' + t.name + (i === 0 ? ' ★' : '') + '</td>' +
+      var rowStyle = i === 0 ? ' style="background:#d1fae5;color:#065f46;font-weight:600;"' : '';
+      var cellStyle = i === 0 ? ' style="color:#065f46;font-weight:600;"' : '';
+      totalsRow += '<tr' + rowStyle + '>' +
+        '<td style="font-size:11px;font-family:var(--mono);white-space:nowrap;' + (i === 0 ? 'color:#065f46;font-weight:600;' : '') + '">' + t.name + (i === 0 ? ' ★' : '') + '</td>' +
         '<td class="num">' + t.totI.toFixed(1) + '</td>' +
+        '<td class="num">$' + (t.totC / 100).toFixed(2) + '</td>' +
         '<td class="num">' + t.totE.toFixed(1) + '</td>' +
+        '<td class="num">$' + (t.totEr / 100).toFixed(2) + '</td>' +
         '<td class="num">$' + t.netCost.toFixed(2) + '</td>' +
-        '<td class="num"' + cheapest + '>$' + t.avgDolPerKwh.toFixed(3) + '</td>' +
+        '<td class="num">$' + t.avgDolPerKwh.toFixed(3) + '</td>' +
         '</tr>';
     });
     totalsRow += '</tbody></table>';
