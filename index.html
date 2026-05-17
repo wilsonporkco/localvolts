@@ -126,11 +126,15 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 @media (max-width: 900px) { .two-charts { grid-template-columns: 1fr; } }
 
 /* Table */
-.table-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.table-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: visible; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 .table-header { padding: 14px 20px; border-bottom: 1px solid #f3f4f6; display: flex; align-items: center; justify-content: space-between; background: #fafafa; }
 .table-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--text3); text-transform: uppercase; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .data-table th { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: #6b7280; text-transform: uppercase; padding: 10px 16px; border-bottom: 1px solid #f3f4f6; text-align: left; font-weight: 500; background: #f9fafb; }
+/* Sticky first column for horizontal-scrolling tables */
+.data-table th:first-child { position: sticky; left: 0; z-index: 3; background: #f9fafb; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
+.data-table td:first-child { position: sticky; left: 0; z-index: 2; background: #fff; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
+.data-table tbody tr:hover td:first-child { background: #f9fafb; }
 .data-table th.num { text-align: right; }
 .data-table td { padding: 9px 16px; border-bottom: 1px solid #f3f4f6; color: #374151; font-family: var(--mono); font-size: 11px; }
 .data-table td.num { text-align: right; }
@@ -390,7 +394,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               <span class="table-title">Actual days · all meters</span>
               <button class="btn btn-ghost" onclick="exportComparisonCSV()" style="font-size:11px;padding:5px 12px;">Export CSV</button>
             </div>
-            <div style="overflow-x:auto;">
+            <div style="overflow-x:auto;position:relative;">
               <table class="data-table" id="comparison-table">
                 <thead id="comparison-thead"></thead>
                 <tbody id="comparison-tbody"></tbody>
@@ -1360,7 +1364,7 @@ async function loadComparison() {
     var tbody = days.map(function(day) {
       // Format date nicely: "Mon 12 May"
       var dt = new Date(day + 'T12:00:00+10:00');
-      var dateLabel = dt.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' });
+      var dateLabel = dt.toLocaleDateString('en-AU', { day:'numeric', month:'short' });
       var row = '<tr><td style="white-space:nowrap;">' + dateLabel + '</td>';
       var csvRow = { date: day };
       nmis.forEach(function(nmi, idx) {
