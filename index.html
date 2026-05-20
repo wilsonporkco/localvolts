@@ -687,17 +687,18 @@ function showLiveDebug() {
   var card = document.getElementById('live-debug-card');
   var out = document.getElementById('live-debug-out');
   if (!liveRawData.length) { alert('Load live data first.'); return; }
-  // Show first NMI's first 10 intervals — all keys + values
+  // Use the currently selected NMI (or first NMI if 'All meters')
+  var selectedNmi = document.getElementById('nmi-select').value;
   var nmiKeys = [...new Set(liveRawData.map(function(r){return r.NMI||r.nmi;}))];
-  var sample = liveRawData.filter(function(r){return (r.NMI||r.nmi)===nmiKeys[0];}).slice(0,10);
+  var targetNmi = (selectedNmi && selectedNmi !== '*') ? selectedNmi : nmiKeys[0];
+  var sample = liveRawData.filter(function(r){return (r.NMI||r.nmi)===targetNmi;}).slice(0,10);
   var lines = sample.map(function(r, i) {
     var t = r.intervalEnd ? (function(u){var d=new Date(new Date(u).getTime()+10*3600000);return d.toISOString().replace('T',' ').slice(0,19)+' AEST';})(r.intervalEnd) : '?';
-    // Find all keys that contain "rate" or "cost" or "earn" (case-insensitive)
     var rateKeys = Object.keys(r).filter(function(k){ return /rate|cost|earn|price/i.test(k); });
     var vals = rateKeys.map(function(k){ return k + ': ' + r[k]; }).join('\n    ');
     return 'Interval ' + (i+1) + ' [' + t + ']\n    ' + vals;
   }).join('\n\n');
-  out.textContent = 'NMI: ' + nmiKeys[0] + ' · ' + sample.length + ' intervals shown\n\n' + lines;
+  out.textContent = 'NMI: ' + targetNmi + ' · ' + sample.length + ' intervals shown\n\n' + lines;
   card.style.display = 'block';
   card.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
@@ -1558,38 +1559,35 @@ async function loadLive() {
       mCard('Earnings', '$'+(earn/100).toFixed(4), '', 'green') +
       mCard('Net $', (finNet>=0?'+$':'-$')+(Math.abs(finNet)/100).toFixed(4), '', finNet>=0?'green':'red');
 
-    // Tariff / plan badge
-    var tariffBadge = document.getElementById('live-tariff-badge');
-    var tariffFields = ['tariffType','tariff','planType','planCode','connectionType','pricingType','networkTariff','rateType'];
-    var tariffParts = [];
-    if (nmi !== '*') {
-      tariffFields.forEach(function(f){ if(d[f]!=null&&d[f]!=='') tariffParts.push(String(d[f])); });
-    } else {
-      // show per-NMI tariffs if multiple meters
-      var nmiTariffs = {};
-      data.forEach(function(r){
-        if(!nmiTariffs[r.NMI]) {
-          var parts=[];
-          tariffFields.forEach(function(f){ if(r[f]!=null&&r[f]!=='') parts.push(String(r[f])); });
-          if(parts.length) nmiTariffs[r.NMI]=parts.join(' · ');
-        }
-      });
-      var uniqueTariffs=[...new Set(Object.values(nmiTariffs))];
-      tariffParts=uniqueTariffs;
+    // Derive tariff type from data structure
+    function deriveTariff(r) {
+      var varCost = safeNum(r.costsAllVar), fixedCost = safeNum(r.costsAllFixed);
+      var hasVar = varCost !== null && varCost !== 0;
+      var hasFixed = fixedCost !== null && fixedCost !== 0;
+      var varRate = safeNum(r.costsAllVarRate);
+      if (hasVar || varRate !== null) return 'Spot / Variable';
+      if (hasFixed && !hasVar) return 'Fixed supply charge';
+      return null;
     }
-    if(tariffParts.length){
-      tariffBadge.textContent = '⚡ '+tariffParts.join(' | ');
-      tariffBadge.style.display='inline-block';
+    var tariffBadge = document.getElementById('live-tariff-badge');
+    if (nmi !== '*') {
+      var tType = deriveTariff(d);
+      if (tType) { tariffBadge.textContent = '⚡ '+tType; tariffBadge.style.display='inline-block'; }
+      else { tariffBadge.style.display='none'; }
     } else {
-      tariffBadge.style.display='none';
+      // Show if all meters share same tariff type or list distinct ones
+      var seen = {};
+      data.forEach(function(r){ var t=deriveTariff(r); if(t) seen[t]=true; });
+      var types=Object.keys(seen);
+      if(types.length){ tariffBadge.textContent='⚡ '+types.join(' · '); tariffBadge.style.display='inline-block'; }
+      else { tariffBadge.style.display='none'; }
     }
 
     document.getElementById('energy-rows').innerHTML =
       dRow('Interval end', ts, '') +
       dRow('Quality', qPill(d.quality), '') +
       (nmi==='*' ? '' : (function(){
-        var tf=[]; tariffFields.forEach(function(f){if(d[f]!=null&&d[f]!=='') tf.push(d[f]);});
-        return tf.length ? dRow('Tariff / plan', tf.join(' · '), '') : '';
+        var t=deriveTariff(d); return t ? dRow('Import tariff', t, '') : '';
       })()) +
       dRow('Imports', imp.toFixed(4), d.importsAllUnits||'kWh') +
       dRow('Exports', exp.toFixed(4), d.exportsAllUnits||'kWh') +
