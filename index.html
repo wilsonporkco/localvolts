@@ -441,6 +441,16 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             </div>
             <div class="chart-wrap" style="height:150px;"><canvas id="liveChart" role="img" aria-label="24hr forecast.">Forecast.</canvas></div>
           </div>
+          <div class="chart-card">
+            <div class="chart-title">
+              <span>24-hour price forecast</span>
+              <div class="chart-legend">
+                <div class="chart-legend-item"><div class="legend-dot" style="background:#fc8181;"></div>Import cost rate</div>
+                <div class="chart-legend-item"><div class="legend-dot" style="background:#b794f4;border:1px dashed #b794f4;"></div>Export earn rate</div>
+              </div>
+            </div>
+            <div class="chart-wrap" style="height:150px;"><canvas id="liveRateChart" role="img" aria-label="24hr price forecast.">Price forecast.</canvas></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1529,6 +1539,11 @@ async function loadLive() {
       {label:'Imports',data:sl.map(function(r){return toKwh(r.importsAll,r.importsAllUnits);}),borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
       {label:'Exports',data:sl.map(function(r){return toKwh(r.exportsAll,r.exportsAllUnits);}),borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
     ],{yCb:function(v){return v.toFixed(2)+' kWh';}});
+
+    mkChart('liveRateChart','liveRate','line',lb,[
+      {label:'Import cost rate',data:sl.map(function(r){var v=safeNum(r.costsAllVarRate); return v;}),borderColor:'#fc8181',backgroundColor:'rgba(252,129,129,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
+      {label:'Export earn rate',data:sl.map(function(r){var v=safeNum(r.earningsAllVarRate); return v;}),borderColor:'#b794f4',backgroundColor:'rgba(183,148,244,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3],spanGaps:true}
+    ],{yCb:function(v){return v!==null?v.toFixed(2)+'c':'';}});
 
     document.getElementById('live-loading').style.display='none';
     document.getElementById('live-content').style.display='block';
