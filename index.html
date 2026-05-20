@@ -418,6 +418,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <option value="*">All meters</option>
           </select>
           <button class="btn btn-ghost" onclick="loadLive()">↺ Refresh</button>
+          <button class="btn btn-ghost" onclick="showLiveDebug()" style="font-size:11px;">🔍 Inspect fields</button>
         </div>
       </div>
       <div class="panel-body">
@@ -450,6 +451,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </div>
             </div>
             <div class="chart-wrap" style="height:150px;"><canvas id="liveRateChart" role="img" aria-label="24hr price forecast.">Price forecast.</canvas></div>
+          </div>
+          <div class="chart-card" id="live-debug-card" style="display:none;">
+            <div class="chart-title" style="margin-bottom:6px;">
+              <span>API field inspector · first 10 intervals</span>
+              <button class="btn btn-ghost" onclick="document.getElementById('live-debug-card').style.display='none'" style="font-size:11px;padding:3px 10px;">Close</button>
+            </div>
+            <div id="live-debug-out" style="font-family:var(--mono);font-size:10px;color:#374151;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;white-space:pre-wrap;word-break:break-all;max-height:320px;overflow-y:auto;line-height:1.6;"></div>
           </div>
         </div>
       </div>
@@ -672,6 +680,26 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 <script>
 var PROXY = '/.netlify/functions/proxy';
 var charts = {};
+var liveRawData = [];
+
+function showLiveDebug() {
+  var card = document.getElementById('live-debug-card');
+  var out = document.getElementById('live-debug-out');
+  if (!liveRawData.length) { alert('Load live data first.'); return; }
+  // Show first NMI's first 10 intervals — all keys + values
+  var nmiKeys = [...new Set(liveRawData.map(function(r){return r.NMI||r.nmi;}))];
+  var sample = liveRawData.filter(function(r){return (r.NMI||r.nmi)===nmiKeys[0];}).slice(0,10);
+  var lines = sample.map(function(r, i) {
+    var t = r.intervalEnd ? (function(u){var d=new Date(new Date(u).getTime()+10*3600000);return d.toISOString().replace('T',' ').slice(0,19)+' AEST';})(r.intervalEnd) : '?';
+    // Find all keys that contain "rate" or "cost" or "earn" (case-insensitive)
+    var rateKeys = Object.keys(r).filter(function(k){ return /rate|cost|earn|price/i.test(k); });
+    var vals = rateKeys.map(function(k){ return k + ': ' + r[k]; }).join('\n    ');
+    return 'Interval ' + (i+1) + ' [' + t + ']\n    ' + vals;
+  }).join('\n\n');
+  out.textContent = 'NMI: ' + nmiKeys[0] + ' · ' + sample.length + ' intervals shown\n\n' + lines;
+  card.style.display = 'block';
+  card.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
 var csvData = { daily: [], weekly: [], monthly: [] };
 var dailyChartRows = [];
 var rateSelectionInited = false;
@@ -1477,6 +1505,7 @@ async function loadLive() {
   try {
     var nmi=document.getElementById('nmi-select').value||'*';
     var data=await apiFetch({NMI:nmi});
+    liveRawData = data;
     updateKnownNMIs(data);
     // When viewing all meters, sum up imports/exports across NMIs for metrics
     var d=data[0];
