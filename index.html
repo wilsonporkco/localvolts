@@ -417,6 +417,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <select id="nmi-select" onchange="loadLive()" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 12px;outline:none;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
             <option value="*">All meters</option>
           </select>
+          <span id="live-tariff-badge" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:4px 10px;font-size:11px;font-family:var(--mono);color:#0369a1;white-space:nowrap;"></span>
           <button class="btn btn-ghost" onclick="loadLive()">↺ Refresh</button>
           <button class="btn btn-ghost" onclick="showLiveDebug()" style="font-size:11px;">🔍 Inspect fields</button>
         </div>
@@ -1325,6 +1326,17 @@ function mkChart(id, key, type, labels, datasets, opts) {
     }
   };
   if (opts && opts.yMin !== undefined) defaults.scales.y.min = opts.yMin;
+  if (opts && opts.ySuggestedMin !== undefined) defaults.scales.y.suggestedMin = opts.ySuggestedMin;
+  if (opts && opts.ySuggestedMax !== undefined) defaults.scales.y.suggestedMax = opts.ySuggestedMax;
+  if (opts && opts.y1Cb) {
+    defaults.scales.y1 = {
+      position:'right',
+      grid:{drawOnChartArea:false},
+      ticks:{color:'#b794f4',font:{family:'DM Mono',size:9},callback:opts.y1Cb},
+      suggestedMin: opts.y1SuggestedMin !== undefined ? opts.y1SuggestedMin : undefined,
+      suggestedMax: opts.y1SuggestedMax !== undefined ? opts.y1SuggestedMax : undefined
+    };
+  }
   if (opts && opts.plugins) Object.assign(defaults.plugins, opts.plugins);
   charts[key]=new Chart(ctx,{type:type,data:{labels:labels,datasets:datasets},options:defaults});
 }
@@ -1546,9 +1558,39 @@ async function loadLive() {
       mCard('Earnings', '$'+(earn/100).toFixed(4), '', 'green') +
       mCard('Net $', (finNet>=0?'+$':'-$')+(Math.abs(finNet)/100).toFixed(4), '', finNet>=0?'green':'red');
 
+    // Tariff / plan badge
+    var tariffBadge = document.getElementById('live-tariff-badge');
+    var tariffFields = ['tariffType','tariff','planType','planCode','connectionType','pricingType','networkTariff','rateType'];
+    var tariffParts = [];
+    if (nmi !== '*') {
+      tariffFields.forEach(function(f){ if(d[f]!=null&&d[f]!=='') tariffParts.push(String(d[f])); });
+    } else {
+      // show per-NMI tariffs if multiple meters
+      var nmiTariffs = {};
+      data.forEach(function(r){
+        if(!nmiTariffs[r.NMI]) {
+          var parts=[];
+          tariffFields.forEach(function(f){ if(r[f]!=null&&r[f]!=='') parts.push(String(r[f])); });
+          if(parts.length) nmiTariffs[r.NMI]=parts.join(' · ');
+        }
+      });
+      var uniqueTariffs=[...new Set(Object.values(nmiTariffs))];
+      tariffParts=uniqueTariffs;
+    }
+    if(tariffParts.length){
+      tariffBadge.textContent = '⚡ '+tariffParts.join(' | ');
+      tariffBadge.style.display='inline-block';
+    } else {
+      tariffBadge.style.display='none';
+    }
+
     document.getElementById('energy-rows').innerHTML =
       dRow('Interval end', ts, '') +
       dRow('Quality', qPill(d.quality), '') +
+      (nmi==='*' ? '' : (function(){
+        var tf=[]; tariffFields.forEach(function(f){if(d[f]!=null&&d[f]!=='') tf.push(d[f]);});
+        return tf.length ? dRow('Tariff / plan', tf.join(' · '), '') : '';
+      })()) +
       dRow('Imports', imp.toFixed(4), d.importsAllUnits||'kWh') +
       dRow('Exports', exp.toFixed(4), d.exportsAllUnits||'kWh') +
       dRow('Demand', fmt(d.demandMain,3), d.demandMainUnits||'kW');
@@ -1592,18 +1634,19 @@ async function loadLive() {
     });
 
     mkChart('liveRateChart','liveRate','line',lb,[
-      {label:'Import cost rate',data:sl.map(function(r){var v=safeNum(r.costsAllVarRate); return v;}),borderColor:'#fc8181',backgroundColor:'rgba(252,129,129,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
-      {label:'Export earn rate',data:sl.map(function(r){var v=safeNum(r.earningsAllVarRate); return v;}),borderColor:'#b794f4',backgroundColor:'rgba(183,148,244,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3],spanGaps:true},
-      {label:'_zero',data:sl.map(function(){return 0;}),borderColor:'rgba(100,116,139,0.4)',borderWidth:1,borderDash:[2,2],pointRadius:0,fill:false,tension:0},
-      {label:'_negzone',data:sl.map(function(r){var v=safeNum(r.earningsAllVarRate); return v!==null&&v<0?v:0;}),borderColor:'transparent',backgroundColor:'rgba(239,68,68,0.08)',fill:{target:'stack'},pointRadius:0,tension:0}
+      {label:'Import cost rate',data:sl.map(function(r){var v=safeNum(r.costsAllVarRate); return v;}),yAxisID:'y',borderColor:'#fc8181',backgroundColor:'rgba(252,129,129,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
+      {label:'Export earn rate',data:sl.map(function(r){var v=safeNum(r.earningsAllVarRate); return v;}),yAxisID:'y1',borderColor:'#b794f4',backgroundColor:'rgba(183,148,244,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3],spanGaps:true}
     ],{
       yCb:function(v){return v!==null?v.toFixed(1)+'c':'';},
+      ySuggestedMin:0, ySuggestedMax:0,
+      y1Cb:function(v){return v!==null?v.toFixed(1)+'c':'';},
+      y1SuggestedMin:0, y1SuggestedMax:0,
       tooltipCbs:{
         title:function(items){return items[0].label+' AEST';},
         label:function(ctx){
-          if(ctx.dataset.label.startsWith('_')) return null;
           var v=ctx.parsed.y; if(v===null||v===undefined) return null;
           var neg = v<0 ? ' ⚠ negative' : '';
+          var axis = ctx.datasetIndex===0 ? '' : ' (right axis)';
           return ctx.dataset.label+': '+v.toFixed(2)+' c/kWh'+neg;
         }
       }
