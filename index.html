@@ -435,8 +435,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="chart-title">
               <span>24-hour forecast</span>
               <div class="chart-legend">
-                <div class="chart-legend-item"><div class="legend-dot" style="background:#4fd1c5;"></div>Imports</div>
-                <div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;border:1px dashed #68d391;"></div>Exports</div>
+                <div class="chart-legend-item"><div class="legend-dot" style="background:#ef4444;"></div>Imports</div>
+                <div class="chart-legend-item"><div class="legend-dot" style="background:#22c55e;border:1px dashed #22c55e;"></div>Exports</div>
               </div>
             </div>
             <div class="chart-wrap" style="height:150px;"><canvas id="liveChart" role="img" aria-label="24hr forecast.">Forecast.</canvas></div>
@@ -482,7 +482,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           </div>
           <!-- Imports chart: full width below -->
           <div class="chart-card">
-            <div class="chart-title"><span>Imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#4fd1c5;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;"></div>Export</div></div></div>
+            <div class="chart-title"><span>Imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#ef4444;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#22c55e;"></div>Export</div></div></div>
             <div class="chart-wrap" style="height:180px;"><canvas id="dailyEnergyChart" role="img" aria-label="Daily energy.">Daily energy.</canvas></div>
           </div>
           <div class="table-card">
@@ -498,7 +498,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="collapsible-body" id="daily-table-body" style="max-height:0;overflow:hidden;">
               <div style="overflow-x:auto;max-height:380px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
-                  <thead><tr><th>Time (AEST)</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Cost (c)</th><th class="num">Earnings (c)</th><th class="num">Cost rate</th><th class="num">Earn rate</th><th>Quality</th></tr></thead>
+                  <thead><tr><th>Time (AEST)</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Cost ($)</th><th class="num">Earnings ($)</th><th class="num">Cost rate</th><th class="num">Earn rate</th><th>Quality</th></tr></thead>
                   <tbody id="daily-tbody"></tbody>
                 </table>
               </div>
@@ -528,7 +528,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div class="metrics-row" id="weekly-metrics"></div>
           <div class="two-charts">
             <div class="chart-card">
-              <div class="chart-title"><span>Daily imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#4fd1c5;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;"></div>Export</div></div></div>
+              <div class="chart-title"><span>Daily imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#ef4444;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#22c55e;"></div>Export</div></div></div>
               <div class="chart-wrap" style="height:170px;"><canvas id="weeklyEnergyChart" role="img" aria-label="Weekly energy.">Weekly energy.</canvas></div>
             </div>
             <div class="chart-card">
@@ -549,7 +549,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="collapsible-body" id="weekly-table-body" style="max-height:0;overflow:hidden;">
               <div style="overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
-                  <thead><tr><th>Day</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs (c)</th><th class="num">Earnings (c)</th><th class="num">Net (c)</th><th class="num">Emissions (g)</th></tr></thead>
+                  <thead><tr><th>Day</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs ($)</th><th class="num">Earnings ($)</th><th class="num">Net ($)</th><th class="num">Emissions (g)</th></tr></thead>
                   <tbody id="weekly-tbody"></tbody>
                 </table>
               </div>
@@ -579,7 +579,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div class="metrics-row" id="monthly-metrics"></div>
           <div class="two-charts">
             <div class="chart-card">
-              <div class="chart-title"><span>Daily imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#4fd1c5;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#68d391;"></div>Export</div></div></div>
+              <div class="chart-title"><span>Daily imports &amp; exports</span><div class="chart-legend"><div class="chart-legend-item"><div class="legend-dot" style="background:#ef4444;"></div>Import</div><div class="chart-legend-item"><div class="legend-dot" style="background:#22c55e;"></div>Export</div></div></div>
               <div class="chart-wrap" style="height:170px;"><canvas id="monthlyEnergyChart" role="img" aria-label="Monthly energy.">Monthly energy.</canvas></div>
             </div>
             <div class="chart-card">
@@ -600,7 +600,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="collapsible-body" id="monthly-table-body" style="max-height:0;overflow:hidden;">
               <div style="overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
-                  <thead><tr><th>Date</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs (c)</th><th class="num">Earnings (c)</th><th class="num">Net (c)</th><th class="num">Emissions (g)</th></tr></thead>
+                  <thead><tr><th>Date</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs ($)</th><th class="num">Earnings ($)</th><th class="num">Net ($)</th><th class="num">Emissions (g)</th></tr></thead>
                   <tbody id="monthly-tbody"></tbody>
                 </table>
               </div>
@@ -1485,7 +1485,7 @@ async function loadLive() {
     var imp=toKwh(d.importsAll,d.importsAllUnits), exp=toKwh(d.exportsAll,d.exportsAllUnits);
     var earn=toCents(d.earningsAll,d.earningsAllUnits), cost=toCents(d.costsAll,d.costsAllUnits);
     var net=imp-exp, finNet=earn-cost;
-    var ts=d.intervalEnd?d.intervalEnd.replace('T',' ').replace('Z',' UTC'):'—';
+    var ts=d.intervalEnd?(function(u){var dt=new Date(new Date(u).getTime()+10*3600000);return dt.toISOString().replace('T',' ').slice(0,19)+' AEST (Brisbane)';})(d.intervalEnd):'—';
 
     document.getElementById('live-metrics').innerHTML =
       mCard('Imports', imp.toFixed(3), 'kWh', '') +
@@ -1503,9 +1503,9 @@ async function loadLive() {
       dRow('Demand', fmt(d.demandMain,3), d.demandMainUnits||'kW');
 
     document.getElementById('financial-rows').innerHTML =
-      dRow('Total earnings', earn.toFixed(4), 'c') +
+      dRow('Total earnings', '$'+(earn/100).toFixed(4), 'AUD') +
       dRow('Earn rate', fmt(d.earningsAllVarRate,4), d.earningsAllVarRateUnits||'c/kWh') +
-      dRow('Total costs', cost.toFixed(4), 'c') +
+      dRow('Total costs', '$'+(cost/100).toFixed(4), 'AUD') +
       dRow('Cost rate', fmt(d.costsAllVarRate,4), d.costsAllVarRateUnits||'c/kWh') +
       dRow('Demand cost', fmt(d.costsDemandMain,4), d.costsDemandMainUnits||'c/kW/Day');
 
@@ -1526,8 +1526,8 @@ async function loadLive() {
     var chartData = nmi!=='*' ? data : data.filter(function(r){return r.NMI===nmiKeys[0];});
     var sl=chartData.slice(0,288); var lb=sl.map(function(r){return intLabel(r.intervalEnd);});
     mkChart('liveChart','live','line',lb,[
-      {label:'Imports',data:sl.map(function(r){return toKwh(r.importsAll,r.importsAllUnits);}),borderColor:'#4fd1c5',backgroundColor:'rgba(79,209,197,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
-      {label:'Exports',data:sl.map(function(r){return toKwh(r.exportsAll,r.exportsAllUnits);}),borderColor:'#68d391',backgroundColor:'rgba(104,211,145,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
+      {label:'Imports',data:sl.map(function(r){return toKwh(r.importsAll,r.importsAllUnits);}),borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
+      {label:'Exports',data:sl.map(function(r){return toKwh(r.exportsAll,r.exportsAllUnits);}),borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
     ],{yCb:function(v){return v.toFixed(2)+' kWh';}});
 
     document.getElementById('live-loading').style.display='none';
@@ -1623,8 +1623,8 @@ async function loadDaily() {
     setTimeout(initRateSelection, 100);
     var lb=chartRows.map(function(r){return intLabel(r.interval_end);});
     mkChart('dailyEnergyChart','dailyEnergy','bar',lb,[
-      {label:'Imports',data:chartRows.map(function(r){return parseFloat(r.imports_kwh)||0;}),backgroundColor:'rgba(79,209,197,0.7)',borderRadius:2},
-      {label:'Exports',data:chartRows.map(function(r){return parseFloat(r.exports_kwh)||0;}),backgroundColor:'rgba(104,211,145,0.7)',borderRadius:2}
+      {label:'Imports',data:chartRows.map(function(r){return parseFloat(r.imports_kwh)||0;}),backgroundColor:'rgba(239,68,68,0.7)',borderRadius:2},
+      {label:'Exports',data:chartRows.map(function(r){return parseFloat(r.exports_kwh)||0;}),backgroundColor:'rgba(34,197,94,0.7)',borderRadius:2}
     ],{yCb:function(v){return v.toFixed(3);}});
 
     mkChart('dailyRateChart','dailyRate','line',lb,[
@@ -1637,7 +1637,7 @@ async function loadDaily() {
       var cost=parseFloat(r.costs_cents)||0; var earn=parseFloat(r.earnings_cents)||0;
       return '<tr><td>'+intLabel(r.interval_end)+'</td>'+
         '<td class="num">'+imp.toFixed(3)+'</td><td class="num">'+exp.toFixed(3)+'</td>'+
-        '<td class="num">'+cost.toFixed(2)+'</td><td class="num">'+earn.toFixed(2)+'</td>'+
+        '<td class="num">$'+(cost/100).toFixed(4)+'</td><td class="num">$'+(earn/100).toFixed(4)+'</td>'+
         '<td class="num">'+(r.costs_rate!==null?parseFloat(r.costs_rate).toFixed(2):'—')+'</td>'+
         '<td class="num">'+(r.earnings_rate!==null?parseFloat(r.earnings_rate).toFixed(2):'—')+'</td>'+
         '<td>'+qPill(q)+'</td></tr>';
@@ -1676,21 +1676,21 @@ function aggregateDays(rows) {
 function renderPeriodCharts(energyId,energyKey,costId,costKey,days,dm) {
   var lb=days.map(function(d){return d.slice(5);});
   mkChart(energyId,energyKey,'bar',lb,[
-    {label:'Imports',data:days.map(function(d){return dm[d].imports;}),backgroundColor:'rgba(79,209,197,0.7)',borderRadius:3},
-    {label:'Exports',data:days.map(function(d){return dm[d].exports;}),backgroundColor:'rgba(104,211,145,0.7)',borderRadius:3}
+    {label:'Imports',data:days.map(function(d){return dm[d].imports;}),backgroundColor:'rgba(239,68,68,0.7)',borderRadius:3},
+    {label:'Exports',data:days.map(function(d){return dm[d].exports;}),backgroundColor:'rgba(34,197,94,0.7)',borderRadius:3}
   ],{yCb:function(v){return v.toFixed(1)+' kWh';}});
   mkChart(costId,costKey,'bar',lb,[
-    {label:'Costs',data:days.map(function(d){return dm[d].costs;}),backgroundColor:'rgba(252,129,129,0.7)',borderRadius:3},
-    {label:'Earnings',data:days.map(function(d){return dm[d].earnings;}),backgroundColor:'rgba(183,148,244,0.7)',borderRadius:3}
-  ],{yCb:function(v){return v.toFixed(0)+'c';}});
+    {label:'Costs',data:days.map(function(d){return dm[d].costs/100;}),backgroundColor:'rgba(252,129,129,0.7)',borderRadius:3},
+    {label:'Earnings',data:days.map(function(d){return dm[d].earnings/100;}),backgroundColor:'rgba(183,148,244,0.7)',borderRadius:3}
+  ],{yCb:function(v){return '$'+v.toFixed(2);}});
 }
 
 function dayTableRows(days,dm) {
   return days.map(function(d){
     var r=dm[d]; var net=r.earnings-r.costs; var nc=net>=0?'pos':'neg';
     return '<tr><td>'+d+'</td><td class="num">'+r.imports.toFixed(2)+'</td><td class="num">'+r.exports.toFixed(2)+'</td>'+
-      '<td class="num">'+r.costs.toFixed(0)+'</td><td class="num">'+r.earnings.toFixed(0)+'</td>'+
-      '<td class="num '+nc+'">'+(net>=0?'+':'')+net.toFixed(0)+'</td><td class="num">'+r.emissions.toFixed(0)+'</td></tr>';
+      '<td class="num">$'+(r.costs/100).toFixed(2)+'</td><td class="num">$'+(r.earnings/100).toFixed(2)+'</td>'+
+      '<td class="num '+nc+'">'+(net>=0?'+$':'-$')+(Math.abs(net)/100).toFixed(2)+'</td><td class="num">'+r.emissions.toFixed(0)+'</td></tr>';
   }).join('');
 }
 
