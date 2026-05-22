@@ -176,179 +176,206 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .settings-hint { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-top: 8px; }
 .debug-out { font-family: var(--mono); font-size: 11px; color: #374151; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-top: 12px; white-space: pre-wrap; word-break: break-all; max-height: 180px; overflow: auto; display: none; }
 
-/* ── PIN LOGIN SCREEN ─────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   PIN LOGIN — SpaceX / Power Grid Theme
+   ══════════════════════════════════════════════════════════ */
 #pin-screen {
   position: fixed; inset: 0; z-index: 9999;
-  background: #080e1a;
+  background: #000005;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   overflow: hidden;
-  transition: opacity 0.6s ease, transform 0.6s ease;
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  font-family: var(--font);
 }
 #pin-screen.unlocking {
-  opacity: 0; transform: scale(1.04) translateY(-10px); pointer-events: none;
+  opacity: 0; transform: scale(1.06) translateY(-14px); pointer-events: none;
 }
 
-/* SVG power grid background */
+/* Full-screen canvas for starfield + power grid */
 #pin-canvas {
   position: absolute; inset: 0; width: 100%; height: 100%;
   pointer-events: none;
 }
 
-/* Radial glow */
+/* Deep space radial glow — electric blue horizon */
 #pin-screen::before {
   content: '';
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(14,165,233,0.13) 0%, transparent 70%);
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(14,165,233,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 30% at 50% 50%, rgba(255,255,255,0.02) 0%, transparent 70%);
   pointer-events: none;
 }
 
-/* Bolt burst decoration */
+/* Thin horizontal horizon line */
+#pin-screen::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 28%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(14,165,233,0.25) 20%, rgba(14,165,233,0.5) 50%, rgba(14,165,233,0.25) 80%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Orbit rings (energy field) */
 .pin-bolt-ring {
   position: absolute;
-  width: 520px; height: 520px;
-  border-radius: 50%;
-  border: 1px solid rgba(14,165,233,0.08);
+  width: 480px; height: 480px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.04);
   top: 50%; left: 50%; transform: translate(-50%,-50%);
   pointer-events: none;
+  animation: pin-ring-spin 60s linear infinite;
 }
-.pin-bolt-ring:nth-child(2) { width: 700px; height: 700px; border-color: rgba(14,165,233,0.05); }
-.pin-bolt-ring:nth-child(3) { width: 900px; height: 900px; border-color: rgba(14,165,233,0.03); }
+.pin-bolt-ring:nth-child(2) {
+  width: 680px; height: 680px;
+  border-color: rgba(14,165,233,0.04);
+  animation-duration: 90s; animation-direction: reverse;
+}
+.pin-bolt-ring:nth-child(3) {
+  width: 880px; height: 880px;
+  border-color: rgba(255,255,255,0.02);
+  animation-duration: 120s;
+}
+@keyframes pin-ring-spin { to { transform: translate(-50%,-50%) rotate(360deg); } }
 
-/* Card */
-.pin-card {
-  position: relative; z-index: 2;
-  display: flex; flex-direction: column; align-items: center;
-  gap: 28px;
-}
-
-/* Logo area */
-.pin-logo {
-  text-align: center;
-}
-.pin-logo-mark {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em;
-  color: #38bdf8; text-transform: uppercase; margin-bottom: 4px;
-}
-.pin-logo-name {
-  font-size: 28px; font-weight: 700; letter-spacing: -0.04em; color: #f1f5f9;
-}
-.pin-logo-sub {
-  font-family: var(--mono); font-size: 10px; color: #475569; letter-spacing: 0.1em;
-  text-transform: uppercase; margin-top: 4px;
-}
-
-/* Lightning bolt icon */
-.pin-bolt-icon {
-  width: 48px; height: 48px;
-  background: linear-gradient(135deg, #0ea5e9, #6366f1);
-  border-radius: 14px;
-  display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 8px;
-  box-shadow: 0 0 32px rgba(14,165,233,0.45), 0 0 64px rgba(14,165,233,0.15);
-  animation: pin-bolt-pulse 2.5s ease-in-out infinite;
-}
-@keyframes pin-bolt-pulse {
-  0%,100% { box-shadow: 0 0 24px rgba(14,165,233,0.4), 0 0 48px rgba(14,165,233,0.1); }
-  50%      { box-shadow: 0 0 40px rgba(14,165,233,0.7), 0 0 80px rgba(14,165,233,0.25); }
-}
-
-/* PIN dots */
-.pin-dots {
-  display: flex; gap: 14px; justify-content: center;
-}
-.pin-dot {
-  width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid rgba(14,165,233,0.4);
-  background: transparent;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-}
-.pin-dot.filled {
-  background: #38bdf8;
-  border-color: #38bdf8;
-  box-shadow: 0 0 12px rgba(56,189,248,0.7);
-}
-.pin-dot.error {
-  background: #ef4444;
-  border-color: #ef4444;
-  box-shadow: 0 0 12px rgba(239,68,68,0.7);
-  animation: pin-shake 0.35s ease;
-}
-@keyframes pin-shake {
-  0%,100% { transform: translateX(0); }
-  20%      { transform: translateX(-6px); }
-  40%      { transform: translateX(6px); }
-  60%      { transform: translateX(-4px); }
-  80%      { transform: translateX(4px); }
-}
-
-/* Numpad */
-.pin-pad {
-  display: grid; grid-template-columns: repeat(3, 72px);
-  gap: 10px;
-}
-.pin-key {
-  width: 72px; height: 72px; border-radius: 50%;
-  border: 1px solid rgba(14,165,233,0.2);
-  background: rgba(14,165,233,0.06);
-  color: #e2e8f0;
-  font-family: var(--font); font-size: 22px; font-weight: 500;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.12s, border-color 0.12s, transform 0.1s, box-shadow 0.12s;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-}
-.pin-key:hover {
-  background: rgba(14,165,233,0.15);
-  border-color: rgba(14,165,233,0.5);
-  box-shadow: 0 0 16px rgba(14,165,233,0.2);
-}
-.pin-key:active {
-  transform: scale(0.91);
-  background: rgba(14,165,233,0.28);
-}
-.pin-key.pin-zero { grid-column: 2; }
-.pin-key.pin-del {
-  grid-column: 3;
-  font-size: 18px;
-  color: #64748b;
-  border-color: rgba(100,116,139,0.2);
-  background: rgba(100,116,139,0.05);
-}
-.pin-key.pin-del:hover { border-color: rgba(100,116,139,0.4); background: rgba(100,116,139,0.12); }
-
-/* Hint text */
-.pin-hint {
-  font-family: var(--mono); font-size: 11px; color: #475569;
-  letter-spacing: 0.05em; text-align: center; min-height: 16px;
-  transition: color 0.2s;
-}
-.pin-hint.err { color: #f87171; }
-
-/* Setup mode */
-.pin-setup-badge {
-  display: inline-block;
-  background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3);
-  border-radius: 6px; padding: 2px 10px;
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
-  color: #a5b4fc; text-transform: uppercase;
-}
-
-/* Animated power lines canvas */
-@keyframes pin-scanline {
-  from { transform: translateY(-100%); }
-  to   { transform: translateY(100vh); }
-}
+/* Scanline sweep */
 .pin-scanline {
   position: absolute; inset: 0; pointer-events: none; overflow: hidden;
 }
 .pin-scanline::after {
   content: '';
-  position: absolute; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent 0%, rgba(14,165,233,0.3) 50%, transparent 100%);
-  animation: pin-scanline 4s linear infinite;
-  opacity: 0.4;
+  position: absolute; left: 0; right: 0; height: 120px;
+  background: linear-gradient(to bottom, transparent 0%, rgba(14,165,233,0.04) 50%, transparent 100%);
+  animation: pin-scanline-move 8s linear infinite;
 }
+@keyframes pin-scanline-move {
+  from { transform: translateY(-120px); }
+  to   { transform: translateY(calc(100vh + 120px)); }
+}
+
+/* ── Card ── */
+.pin-card {
+  position: relative; z-index: 2;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 24px;
+}
+
+/* Logo */
+.pin-logo { text-align: center; }
+.pin-emblem {
+  margin: 0 auto 14px;
+  width: 72px; height: 72px;
+  animation: pin-emblem-spin 20s linear infinite;
+  filter: drop-shadow(0 0 14px rgba(14,165,233,0.5));
+}
+@keyframes pin-emblem-spin {
+  to { transform: rotate(360deg); }
+}
+/* Counter-rotate the core so it stays still */
+.pin-emblem circle:last-child,
+.pin-emblem circle:nth-last-child(2) {
+  /* core doesn't spin — handled via SVG structure */
+}
+.pin-logo-name {
+  font-size: 22px; font-weight: 300; letter-spacing: 0.28em;
+  color: #ffffff; text-transform: uppercase;
+}
+.pin-logo-sub {
+  font-family: var(--mono); font-size: 10px; color: #334155;
+  letter-spacing: 0.18em; text-transform: uppercase; margin-top: 6px;
+}
+
+/* Bolt icon — SpaceX rocket style */
+.pin-bolt-icon {
+  width: 56px; height: 56px;
+  background: linear-gradient(160deg, #1d4ed8 0%, #0ea5e9 60%, #38bdf8 100%);
+  border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 10px;
+  box-shadow:
+    0 0 0 1px rgba(56,189,248,0.3),
+    0 0 30px rgba(14,165,233,0.5),
+    0 0 70px rgba(14,165,233,0.15);
+  animation: pin-bolt-pulse 3s ease-in-out infinite;
+}
+@keyframes pin-bolt-pulse {
+  0%,100% {
+    box-shadow: 0 0 0 1px rgba(56,189,248,0.25), 0 0 24px rgba(14,165,233,0.4), 0 0 60px rgba(14,165,233,0.1);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(56,189,248,0.5), 0 0 44px rgba(14,165,233,0.7), 0 0 100px rgba(14,165,233,0.25);
+  }
+}
+
+/* PIN dots */
+.pin-dots { display: flex; gap: 16px; justify-content: center; }
+.pin-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: transparent;
+  transition: all 0.15s;
+}
+.pin-dot.filled {
+  background: #ffffff;
+  border-color: #ffffff;
+  box-shadow: 0 0 10px rgba(255,255,255,0.6), 0 0 20px rgba(14,165,233,0.4);
+}
+.pin-dot.error {
+  background: #ef4444; border-color: #ef4444;
+  box-shadow: 0 0 12px rgba(239,68,68,0.8);
+  animation: pin-shake 0.35s ease;
+}
+@keyframes pin-shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* Numpad */
+.pin-pad {
+  display: grid; grid-template-columns: repeat(3, 68px);
+  gap: 12px;
+}
+.pin-key {
+  width: 68px; height: 68px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: #f1f5f9;
+  font-family: var(--font); font-size: 20px; font-weight: 300;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.pin-key:hover {
+  background: rgba(14,165,233,0.12);
+  border-color: rgba(14,165,233,0.5);
+  color: #ffffff;
+  box-shadow: 0 0 18px rgba(14,165,233,0.25);
+}
+.pin-key:active {
+  transform: scale(0.88);
+  background: rgba(14,165,233,0.25);
+}
+.pin-key.pin-zero { grid-column: 2; }
+.pin-key.pin-del {
+  grid-column: 3; font-size: 16px;
+  color: #334155; border-color: rgba(255,255,255,0.06);
+  background: transparent;
+}
+.pin-key.pin-del:hover { color: #94a3b8; border-color: rgba(255,255,255,0.15); }
+
+/* Hint */
+.pin-hint {
+  font-family: var(--mono); font-size: 10px; color: #334155;
+  letter-spacing: 0.08em; text-align: center; min-height: 14px;
+  text-transform: uppercase;
+  transition: color 0.2s;
+}
+.pin-hint.err { color: #f87171; letter-spacing: 0.05em; text-transform: none; }
 
 /* Settings PIN row */
 .pin-settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -356,43 +383,43 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
 /* Price bubbles */
 .pin-prices {
-  position: absolute;
-  bottom: 40px; left: 0; right: 0;
-  display: flex; justify-content: center; gap: 16px;
-  padding: 0 24px;
+  display: flex; justify-content: center; gap: 12px;
   flex-wrap: wrap;
+  width: 100%; max-width: 320px;
 }
 .pin-price-bubble {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(14,165,233,0.2);
-  backdrop-filter: blur(8px);
-  border-radius: 16px;
-  padding: 14px 20px;
-  min-width: 130px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  padding: 12px 18px;
+  min-width: 124px;
   text-align: center;
-  animation: pin-bubble-float 4s ease-in-out infinite;
-  transition: border-color 0.4s, background 0.4s;
+  animation: pin-bubble-float 5s ease-in-out infinite;
+  transition: border-color 0.5s, background 0.5s, box-shadow 0.5s;
 }
-.pin-price-bubble:nth-child(2) { animation-delay: -2s; }
+.pin-price-bubble:nth-child(2) { animation-delay: -2.5s; }
 @keyframes pin-bubble-float {
   0%,100% { transform: translateY(0px); }
-  50%      { transform: translateY(-5px); }
+  50%      { transform: translateY(-4px); }
 }
 .pin-price-bubble.loaded {
-  border-color: rgba(14,165,233,0.35);
-  background: rgba(14,165,233,0.07);
+  border-color: rgba(14,165,233,0.3);
+  background: rgba(14,165,233,0.06);
+  box-shadow: 0 0 20px rgba(14,165,233,0.08);
 }
 .pin-price-bubble.loaded.export-bubble {
-  border-color: rgba(16,185,129,0.35);
-  background: rgba(16,185,129,0.07);
+  border-color: rgba(16,185,129,0.3);
+  background: rgba(16,185,129,0.06);
+  box-shadow: 0 0 20px rgba(16,185,129,0.08);
 }
 .pin-bubble-label {
-  font-family: var(--mono); font-size: 9px; letter-spacing: 0.15em;
-  text-transform: uppercase; color: #475569; margin-bottom: 6px;
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #334155; margin-bottom: 6px;
   display: flex; align-items: center; justify-content: center; gap: 5px;
 }
 .pin-bubble-label .bbl-dot {
-  width: 6px; height: 6px; border-radius: 50%;
+  width: 5px; height: 5px; border-radius: 50%;
   background: #38bdf8; flex-shrink: 0;
   animation: pulse 2s infinite;
 }
@@ -410,8 +437,21 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .pin-bubble-unit {
   font-family: var(--mono); font-size: 10px; color: #475569; margin-top: 3px;
 }
+.pin-bubble-value {
+  font-family: var(--mono); font-size: 22px; font-weight: 400;
+  letter-spacing: -0.02em; color: #f1f5f9; line-height: 1;
+}
+.pin-bubble-value.loading-val {
+  font-size: 11px; color: #1e293b; font-weight: 400;
+  letter-spacing: 0.08em; animation: pin-loading-blink 1.6s ease-in-out infinite;
+}
+@keyframes pin-loading-blink { 0%,100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+.pin-bubble-unit {
+  font-family: var(--mono); font-size: 9px; color: #334155;
+  margin-top: 3px; letter-spacing: 0.1em;
+}
 .pin-bubble-arrow {
-  font-size: 14px; display: block; margin-bottom: 2px;
+  font-size: 11px; display: block; margin-bottom: 3px; color: #334155;
 }
 /* ── END PIN LOGIN ───────────────────────────────────────── */
 
@@ -570,20 +610,72 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   <div class="pin-card">
     <!-- Logo -->
     <div class="pin-logo">
-      <div class="pin-bolt-icon">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-          <path d="M13 2L4.5 13.5H11L10 22L19.5 10.5H13L13 2Z"
-                fill="white" stroke="white" stroke-width="0.5" stroke-linejoin="round"/>
+      <!-- Power grid node emblem -->
+      <div class="pin-emblem">
+        <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="eg-core" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stop-color="#38bdf8" stop-opacity="1"/>
+              <stop offset="100%" stop-color="#1d4ed8" stop-opacity="1"/>
+            </radialGradient>
+            <radialGradient id="eg-ring" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stop-color="#38bdf8" stop-opacity="0.15"/>
+              <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+            </radialGradient>
+            <filter id="eg-glow">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          <!-- Outer glow ring -->
+          <circle cx="36" cy="36" r="34" fill="url(#eg-ring)"/>
+
+          <!-- Outer ring -->
+          <circle cx="36" cy="36" r="32" stroke="rgba(56,189,248,0.25)" stroke-width="0.75"/>
+
+          <!-- Radiating power lines (8 spokes) -->
+          <g stroke="rgba(56,189,248,0.5)" stroke-width="0.8" filter="url(#eg-glow)">
+            <line x1="36" y1="4"  x2="36" y2="18"/>
+            <line x1="36" y1="54" x2="36" y2="68"/>
+            <line x1="4"  y1="36" x2="18" y2="36"/>
+            <line x1="54" y1="36" x2="68" y2="36"/>
+            <line x1="13" y1="13" x2="23" y2="23"/>
+            <line x1="49" y1="49" x2="59" y2="59"/>
+            <line x1="59" y1="13" x2="49" y2="23"/>
+            <line x1="23" y1="49" x2="13" y2="59"/>
+          </g>
+
+          <!-- Spoke endpoint dots -->
+          <g fill="rgba(56,189,248,0.7)">
+            <circle cx="36" cy="4"  r="1.8"/>
+            <circle cx="36" cy="68" r="1.8"/>
+            <circle cx="4"  cy="36" r="1.8"/>
+            <circle cx="68" cy="36" r="1.8"/>
+            <circle cx="13" cy="13" r="1.4"/>
+            <circle cx="59" cy="59" r="1.4"/>
+            <circle cx="59" cy="13" r="1.4"/>
+            <circle cx="13" cy="59" r="1.4"/>
+          </g>
+
+          <!-- Mid ring -->
+          <circle cx="36" cy="36" r="20" stroke="rgba(56,189,248,0.3)" stroke-width="0.75" stroke-dasharray="4 3"/>
+
+          <!-- Inner ring -->
+          <circle cx="36" cy="36" r="13" stroke="rgba(56,189,248,0.5)" stroke-width="1"/>
+
+          <!-- Core circle -->
+          <circle cx="36" cy="36" r="9" fill="url(#eg-core)" filter="url(#eg-glow)"/>
+
+          <!-- Core inner highlight -->
+          <circle cx="33" cy="33" r="3" fill="rgba(255,255,255,0.25)"/>
         </svg>
       </div>
-      <div class="pin-logo-mark">Energy</div>
-      <div class="pin-logo-name">Localvolts</div>
+      <div class="pin-logo-name">Energy Manager</div>
       <div class="pin-logo-sub" id="pin-mode-label">Enter PIN to continue</div>
     </div>
 
     <!-- Setup badge (shown during first-time setup) -->
-    <div class="pin-setup-badge" id="pin-setup-badge" style="display:none;">First-time setup</div>
-
     <!-- PIN dot indicators -->
     <div class="pin-dots" id="pin-dots">
       <div class="pin-dot" id="pd0"></div>
@@ -614,25 +706,25 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
         </svg>
       </button>
     </div>
-  </div>
-</div>
-  <!-- Floating live price bubbles -->
-  <div class="pin-prices">
-    <div class="pin-price-bubble import-bubble" id="pin-import-bubble">
-      <div class="pin-bubble-label">
-        <span class="bbl-dot"></span> Import Price
+
+    <!-- Live price bubbles inside the card -->
+    <div class="pin-prices">
+      <div class="pin-price-bubble import-bubble" id="pin-import-bubble">
+        <div class="pin-bubble-label">
+          <span class="bbl-dot"></span> Import Price
+        </div>
+        <span class="pin-bubble-arrow">⬇</span>
+        <div class="pin-bubble-value loading-val" id="pin-import-val">connecting…</div>
+        <div class="pin-bubble-unit" id="pin-import-unit">c / kWh</div>
       </div>
-      <span class="pin-bubble-arrow">⬇</span>
-      <div class="pin-bubble-value loading-val" id="pin-import-val">connecting…</div>
-      <div class="pin-bubble-unit" id="pin-import-unit">c / kWh</div>
-    </div>
-    <div class="pin-price-bubble export-bubble" id="pin-export-bubble">
-      <div class="pin-bubble-label">
-        <span class="bbl-dot green"></span> Export Price
+      <div class="pin-price-bubble export-bubble" id="pin-export-bubble">
+        <div class="pin-bubble-label">
+          <span class="bbl-dot green"></span> Export Price
+        </div>
+        <span class="pin-bubble-arrow">⬆</span>
+        <div class="pin-bubble-value loading-val" id="pin-export-val">connecting…</div>
+        <div class="pin-bubble-unit" id="pin-export-unit">c / kWh</div>
       </div>
-      <span class="pin-bubble-arrow">⬆</span>
-      <div class="pin-bubble-value loading-val" id="pin-export-val">connecting…</div>
-      <div class="pin-bubble-unit" id="pin-export-unit">c / kWh</div>
     </div>
   </div>
 </div>
@@ -2504,136 +2596,178 @@ async function checkLastSync() {
   // DOM refs (lazy)
   function $d(id) { return document.getElementById(id); }
 
-  /* ── Background canvas animation ── */
+  /* ══════════════════════════════════════════════════════════
+     SpaceX-style canvas: Starfield + Power Grid Pulses
+     ══════════════════════════════════════════════════════════ */
   (function initCanvas() {
     var canvas = $d('pin-canvas');
     var ctx    = canvas.getContext('2d');
-    var nodes  = [], links  = [], sparks = [];
     var W, H;
+
+    // ── Stars ──
+    var stars = [];
+    function initStars() {
+      stars = [];
+      var count = Math.floor((W * H) / 2800);
+      for (var i = 0; i < count; i++) {
+        stars.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          r: Math.random() < 0.12 ? (Math.random() * 1.2 + 0.6) : (Math.random() * 0.6 + 0.2),
+          alpha: Math.random() * 0.6 + 0.1,
+          twinkleSpeed: Math.random() * 0.015 + 0.005,
+          twinklePhase: Math.random() * Math.PI * 2,
+          color: Math.random() < 0.05 ? '#bfdbfe' : (Math.random() < 0.08 ? '#fde68a' : '#ffffff')
+        });
+      }
+    }
+
+    // ── Power grid ──
+    var CELL = 110; // grid spacing
+    var gridPulses = []; // travelling pulses along grid lines
+
+    function spawnPulse() {
+      var horiz = Math.random() < 0.5;
+      if (horiz) {
+        var row = Math.floor(Math.random() * Math.ceil(H / CELL)) * CELL;
+        var goRight = Math.random() < 0.5;
+        gridPulses.push({
+          horiz: true,
+          fixed: row,
+          pos: goRight ? -40 : W + 40,
+          dir: goRight ? 1 : -1,
+          speed: 1.4 + Math.random() * 1.6,
+          len: 60 + Math.random() * 80,
+          alpha: 0.4 + Math.random() * 0.4
+        });
+      } else {
+        var col = Math.floor(Math.random() * Math.ceil(W / CELL)) * CELL;
+        var goDown = Math.random() < 0.5;
+        gridPulses.push({
+          horiz: false,
+          fixed: col,
+          pos: goDown ? -40 : H + 40,
+          dir: goDown ? 1 : -1,
+          speed: 1.2 + Math.random() * 1.4,
+          len: 50 + Math.random() * 70,
+          alpha: 0.3 + Math.random() * 0.3
+        });
+      }
+    }
+
+    // ── Shooting stars ──
+    var shooters = [];
+    function spawnShooter() {
+      shooters.push({
+        x: Math.random() * W * 0.8,
+        y: Math.random() * H * 0.5,
+        vx: 4 + Math.random() * 5,
+        vy: 1.5 + Math.random() * 2,
+        len: 80 + Math.random() * 120,
+        alpha: 0.7 + Math.random() * 0.3,
+        life: 1
+      });
+    }
 
     function resize() {
       W = canvas.width  = window.innerWidth;
       H = canvas.height = window.innerHeight;
+      initStars();
     }
     window.addEventListener('resize', resize);
     resize();
-
-    // Create grid nodes
-    function initNodes() {
-      nodes = []; links = [];
-      var cols = Math.ceil(W / 80) + 1;
-      var rows = Math.ceil(H / 80) + 1;
-      for (var r = 0; r < rows; r++) {
-        for (var c = 0; c < cols; c++) {
-          nodes.push({
-            x: c * 80 + (Math.random() - 0.5) * 30,
-            y: r * 80 + (Math.random() - 0.5) * 30,
-            vx: (Math.random() - 0.5) * 0.18,
-            vy: (Math.random() - 0.5) * 0.18,
-            pulse: Math.random() * Math.PI * 2
-          });
-        }
-      }
-      // Build links between nearby nodes
-      for (var i = 0; i < nodes.length; i++) {
-        for (var j = i + 1; j < nodes.length; j++) {
-          var dx = nodes[i].x - nodes[j].x;
-          var dy = nodes[i].y - nodes[j].y;
-          var d  = Math.sqrt(dx*dx + dy*dy);
-          if (d < 120) links.push({ a: i, b: j, d: d });
-        }
-      }
-    }
-    initNodes();
-    window.addEventListener('resize', initNodes);
-
-    function spawnSpark(a, b) {
-      sparks.push({ a: a, b: b, t: 0, speed: 0.012 + Math.random() * 0.018 });
-    }
 
     var frame = 0;
     function draw() {
       ctx.clearRect(0, 0, W, H);
       frame++;
 
-      // Move nodes
-      nodes.forEach(function(n) {
-        n.x += n.vx; n.y += n.vy; n.pulse += 0.025;
-        if (n.x < -40)  { n.x = W + 40; }
-        if (n.x > W+40) { n.x = -40;    }
-        if (n.y < -40)  { n.y = H + 40; }
-        if (n.y > H+40) { n.y = -40;    }
-      });
-
-      // Occasionally spawn a spark
-      if (frame % 18 === 0 && links.length > 0) {
-        var lnk = links[Math.floor(Math.random() * links.length)];
-        spawnSpark(lnk.a, lnk.b);
+      // ── Draw static grid lines (very faint) ──
+      ctx.strokeStyle = 'rgba(14,165,233,0.04)';
+      ctx.lineWidth = 0.5;
+      for (var gx = 0; gx < W; gx += CELL) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+      }
+      for (var gy = 0; gy < H; gy += CELL) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
       }
 
-      // Draw links
-      links.forEach(function(lnk) {
-        var na = nodes[lnk.a], nb = nodes[lnk.b];
-        var alpha = Math.max(0, 0.06 - lnk.d / 2400);
-        ctx.beginPath();
-        ctx.moveTo(na.x, na.y);
-        ctx.lineTo(nb.x, nb.y);
-        ctx.strokeStyle = 'rgba(14,165,233,' + alpha + ')';
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-      });
+      // ── Grid intersection dots ──
+      for (var ix = 0; ix < W; ix += CELL) {
+        for (var iy = 0; iy < H; iy += CELL) {
+          ctx.beginPath();
+          ctx.arc(ix, iy, 1, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(14,165,233,0.12)';
+          ctx.fill();
+        }
+      }
 
-      // Draw nodes
-      nodes.forEach(function(n) {
-        var glow = 0.25 + 0.15 * Math.sin(n.pulse);
+      // ── Stars ──
+      stars.forEach(function(s) {
+        s.twinklePhase += s.twinkleSpeed;
+        var a = s.alpha * (0.7 + 0.3 * Math.sin(s.twinklePhase));
         ctx.beginPath();
-        ctx.arc(n.x, n.y, 1.5, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(56,189,248,' + glow + ')';
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = s.color.replace(')', ',' + a + ')').replace('rgb(', 'rgba(');
+        // Handle hex colors
+        if (s.color[0] === '#') {
+          ctx.globalAlpha = a;
+          ctx.fillStyle = s.color;
+        }
         ctx.fill();
+        ctx.globalAlpha = 1;
       });
 
-      // Draw sparks (travelling along links)
-      sparks = sparks.filter(function(sp) {
-        sp.t += sp.speed;
-        if (sp.t >= 1) return false;
-        var na = nodes[sp.a], nb = nodes[sp.b];
-        var sx = na.x + (nb.x - na.x) * sp.t;
-        var sy = na.y + (nb.y - na.y) * sp.t;
-        // trail
-        var tx = na.x + (nb.x - na.x) * Math.max(0, sp.t - 0.08);
-        var ty = na.y + (nb.y - na.y) * Math.max(0, sp.t - 0.08);
-        var grad = ctx.createLinearGradient(tx, ty, sx, sy);
-        grad.addColorStop(0, 'rgba(56,189,248,0)');
-        grad.addColorStop(1, 'rgba(56,189,248,0.9)');
+      // ── Power grid pulses ──
+      if (frame % 22 === 0) spawnPulse();
+      gridPulses = gridPulses.filter(function(p) {
+        p.pos += p.dir * p.speed;
+        var dead = p.horiz
+          ? (p.dir > 0 ? p.pos - p.len > W : p.pos + p.len < 0)
+          : (p.dir > 0 ? p.pos - p.len > H : p.pos + p.len < 0);
+        if (dead) return false;
+
+        var x1, y1, x2, y2;
+        if (p.horiz) {
+          y1 = y2 = p.fixed;
+          x1 = p.pos - p.dir * p.len; x2 = p.pos;
+        } else {
+          x1 = x2 = p.fixed;
+          y1 = p.pos - p.dir * p.len; y2 = p.pos;
+        }
+        var grad = ctx.createLinearGradient(x1, y1, x2, y2);
+        grad.addColorStop(0, 'rgba(14,165,233,0)');
+        grad.addColorStop(0.7, 'rgba(14,165,233,' + (p.alpha * 0.6) + ')');
+        grad.addColorStop(1,   'rgba(255,255,255,' + p.alpha + ')');
         ctx.beginPath();
-        ctx.moveTo(tx, ty); ctx.lineTo(sx, sy);
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
         ctx.strokeStyle = grad;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = p.horiz ? 1.5 : 1;
         ctx.stroke();
-        // head
+        // bright head dot
         ctx.beginPath();
-        ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.arc(x2, y2, 2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,' + p.alpha + ')';
         ctx.fill();
         return true;
       });
 
-      // Occasional lightning bolt flash in background
-      if (frame % 240 === 0) {
-        var bx = Math.random() * W;
-        var by = 0;
+      // ── Shooting stars ──
+      if (frame % 280 === 0) spawnShooter();
+      shooters = shooters.filter(function(s) {
+        s.x += s.vx; s.y += s.vy; s.life -= 0.018;
+        if (s.life <= 0) return false;
+        var grad = ctx.createLinearGradient(s.x - s.vx * (s.len / s.vx), s.y - s.vy * (s.len / s.vx), s.x, s.y);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(1, 'rgba(255,255,255,' + (s.alpha * s.life) + ')');
         ctx.beginPath();
-        ctx.moveTo(bx, by);
-        var steps = 6 + Math.floor(Math.random() * 5);
-        for (var s = 1; s <= steps; s++) {
-          bx += (Math.random() - 0.5) * 60;
-          by += H / steps;
-          ctx.lineTo(bx, by);
-        }
-        ctx.strokeStyle = 'rgba(14,165,233,0.12)';
-        ctx.lineWidth = 2;
+        ctx.moveTo(s.x - s.len, s.y - s.len * (s.vy / s.vx));
+        ctx.lineTo(s.x, s.y);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1;
         ctx.stroke();
-      }
+        return true;
+      });
 
       requestAnimationFrame(draw);
     }
@@ -2744,17 +2878,9 @@ async function checkLastSync() {
       locked = false;
       return;
     }
-    var hasPin = !!localStorage.getItem(STORAGE_KEY);
-    if (!hasPin) {
-      // First-time setup
-      pinMode = 'setup-new';
-      $d('pin-mode-label').textContent = 'Create a PIN to secure your dashboard';
-      $d('pin-setup-badge').style.display = 'inline-block';
-      setHint('Choose a 4-digit PIN', false);
-    } else {
-      pinMode = 'login';
-      setHint('', false);
-    }
+    // Always go straight to login — default PIN used if none stored
+    pinMode = 'login';
+    setHint('', false);
   }
 
   /* ── Live price bubbles ── */
