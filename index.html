@@ -2499,18 +2499,77 @@ async function checkLastSync() {
   function $d(id) { return document.getElementById(id); }
 
   /* ══════════════════════════════════════════════════════════
-     Solar Farm canvas — sun arc + panel reflection sweep
+     SpaceX-style canvas: Starfield + Power Grid Pulses
      ══════════════════════════════════════════════════════════ */
   (function initCanvas() {
     var canvas = $d('pin-canvas');
     var ctx    = canvas.getContext('2d');
     var W, H;
 
-    var CYCLE_MS = 30000;   // full day/night in 30 seconds
-    var HORIZON  = 0.44;    // fraction of screen height
-    var NUM_ROWS = 12, COLS = 8;
-    var shimmers = [];
-    var stars    = [];
+    // ── Stars ──
+    var stars = [];
+    function initStars() {
+      stars = [];
+      var count = Math.floor((W * H) / 2800);
+      for (var i = 0; i < count; i++) {
+        stars.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          r: Math.random() < 0.12 ? (Math.random() * 1.2 + 0.6) : (Math.random() * 0.6 + 0.2),
+          alpha: Math.random() * 0.6 + 0.1,
+          twinkleSpeed: Math.random() * 0.015 + 0.005,
+          twinklePhase: Math.random() * Math.PI * 2,
+          color: Math.random() < 0.05 ? '#bfdbfe' : (Math.random() < 0.08 ? '#fde68a' : '#ffffff')
+        });
+      }
+    }
+
+    // ── Power grid ──
+    var CELL = 110; // grid spacing
+    var gridPulses = []; // travelling pulses along grid lines
+
+    function spawnPulse() {
+      var horiz = Math.random() < 0.5;
+      if (horiz) {
+        var row = Math.floor(Math.random() * Math.ceil(H / CELL)) * CELL;
+        var goRight = Math.random() < 0.5;
+        gridPulses.push({
+          horiz: true,
+          fixed: row,
+          pos: goRight ? -40 : W + 40,
+          dir: goRight ? 1 : -1,
+          speed: 1.4 + Math.random() * 1.6,
+          len: 60 + Math.random() * 80,
+          alpha: 0.4 + Math.random() * 0.4
+        });
+      } else {
+        var col = Math.floor(Math.random() * Math.ceil(W / CELL)) * CELL;
+        var goDown = Math.random() < 0.5;
+        gridPulses.push({
+          horiz: false,
+          fixed: col,
+          pos: goDown ? -40 : H + 40,
+          dir: goDown ? 1 : -1,
+          speed: 1.2 + Math.random() * 1.4,
+          len: 50 + Math.random() * 70,
+          alpha: 0.3 + Math.random() * 0.3
+        });
+      }
+    }
+
+    // ── Shooting stars ──
+    var shooters = [];
+    function spawnShooter() {
+      shooters.push({
+        x: Math.random() * W * 0.8,
+        y: Math.random() * H * 0.5,
+        vx: 4 + Math.random() * 5,
+        vy: 1.5 + Math.random() * 2,
+        len: 80 + Math.random() * 120,
+        alpha: 0.7 + Math.random() * 0.3,
+        life: 1
+      });
+    }
 
     function resize() {
       W = canvas.width  = window.innerWidth;
@@ -2520,400 +2579,98 @@ async function checkLastSync() {
     window.addEventListener('resize', resize);
     resize();
 
-    function initStars() {
-      stars = [];
-      var n = Math.floor(W * H / 2600);
-      for (var i = 0; i < n; i++) {
-        stars.push({
-          x: Math.random() * W,
-          y: Math.random() * HORIZON * H,
-          r: Math.random() * 1.1 + 0.15,
-          a: Math.random() * 0.75 + 0.15,
-          ph: Math.random() * Math.PI * 2,
-          sp: 0.005 + Math.random() * 0.014
-        });
-      }
-    }
-
-    /* ── Helpers ── */
-    function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
-    function lerp(a,b,t){ return a+(b-a)*t; }
-    function lerpHex(c1,c2,t){
-      var p=function(h,i){return parseInt(h.slice(i,i+2),16);};
-      return 'rgb('+Math.round(lerp(p(c1,1),p(c2,1),t))+','+
-                    Math.round(lerp(p(c1,3),p(c2,3),t))+','+
-                    Math.round(lerp(p(c1,5),p(c2,5),t))+')';
-    }
-
-    /* ── 30-second animated day state ── */
-    function getState() {
-      var t = (Date.now() % CYCLE_MS) / CYCLE_MS; // 0→1 every 30s
-      // Sun travels 0→1 during t ∈ [0.1, 0.9]; night outside that window
-      var sunT  = clamp((t - 0.1) / 0.8, 0, 1);
-      var isDay = t > 0.08 && t < 0.92;
-      var elev  = isDay ? Math.sin(sunT * Math.PI) : 0;
-      // Night alpha fades in/out at edges
-      var nA = t < 0.08  ? 1 :
-               t < 0.18  ? 1-(t-0.08)/0.1  :
-               t < 0.82  ? 0 :
-               t < 0.92  ? (t-0.82)/0.1    : 1;
-      var hY   = HORIZON * H;
-      var sunX = W * sunT;
-      var sunY = hY - Math.sin(sunT * Math.PI) * hY * 0.82;
-      return { t:t, sunT:sunT, sunX:sunX, sunY:sunY,
-               elev:elev, isDay:isDay, nightAlpha:nA };
-    }
-
-    /* ── Sky gradient ── */
-    function drawSky(s) {
-      var hY = HORIZON * H;
-      var e  = s.elev;
-      var topC, midC, horizC;
-      if (s.nightAlpha > 0.9) {
-        topC='#000008'; horizC='#05080f';
-      } else if (e < 0.14) {
-        var f=e/0.14;
-        topC  =lerpHex('#030918','#0d2040',f);
-        midC  =lerpHex('#8b2000','#c84010',f);
-        horizC=lerpHex('#ff5200','#ffa040',f);
-      } else {
-        var f=clamp((e-0.14)/0.5,0,1);
-        topC  =lerpHex('#0d2040','#1a4a78',f);
-        horizC=lerpHex('#ffa040','#82cdea',f);
-      }
-      var g=ctx.createLinearGradient(0,0,0,hY);
-      g.addColorStop(0,topC);
-      if(midC) g.addColorStop(0.52,midC);
-      g.addColorStop(1,horizC);
-      ctx.fillStyle=g; ctx.fillRect(0,0,W,hY);
-
-      // night overlay
-      if(s.nightAlpha>0){
-        ctx.globalAlpha=s.nightAlpha;
-        var ng=ctx.createLinearGradient(0,0,0,hY);
-        ng.addColorStop(0,'#000008'); ng.addColorStop(1,'#05080f');
-        ctx.fillStyle=ng; ctx.fillRect(0,0,W,hY);
-        ctx.globalAlpha=1;
-      }
-    }
-
-    /* ── Stars ── */
-    function drawStars(s) {
-      if(s.nightAlpha<=0) return;
-      var hY=HORIZON*H;
-      stars.forEach(function(st){
-        st.ph+=st.sp;
-        ctx.globalAlpha=st.a*(0.6+0.4*Math.sin(st.ph))*s.nightAlpha;
-        ctx.beginPath(); ctx.arc(st.x,st.y*hY/H,st.r,0,Math.PI*2);
-        ctx.fillStyle='#fff'; ctx.fill();
-      });
-      ctx.globalAlpha=1;
-    }
-
-    /* ── Moon (visible at night) ── */
-    function drawMoon(s) {
-      if(s.nightAlpha<0.3) return;
-      var mx=W*0.72, my=HORIZON*H*0.28, mr=12;
-      ctx.globalAlpha=s.nightAlpha*0.9;
-      var mg=ctx.createRadialGradient(mx-3,my-3,0,mx,my,mr*2.5);
-      mg.addColorStop(0,'rgba(240,240,200,0.3)');
-      mg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.beginPath(); ctx.arc(mx,my,mr*2.5,0,Math.PI*2);
-      ctx.fillStyle=mg; ctx.fill();
-      ctx.beginPath(); ctx.arc(mx,my,mr,0,Math.PI*2);
-      ctx.fillStyle='#e8e4c8'; ctx.fill();
-      ctx.globalAlpha=1;
-    }
-
-    /* ── Sun ── */
-    function drawSun(s) {
-      if(!s.isDay && s.nightAlpha>0.8) return;
-      var x=s.sunX, y=s.sunY, e=s.elev;
-      var golden=e<0.2, r=14+e*12;
-      var vis=s.isDay?1:0;
-      if(!vis) return;
-
-      // Wide corona
-      var c=ctx.createRadialGradient(x,y,r,x,y,r*11);
-      c.addColorStop(0, golden?'rgba(255,130,20,0.3)':'rgba(255,240,100,0.14)');
-      c.addColorStop(0.4,golden?'rgba(255,80,0,0.08)':'rgba(255,200,50,0.04)');
-      c.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.beginPath(); ctx.arc(x,y,r*11,0,Math.PI*2);
-      ctx.fillStyle=c; ctx.fill();
-
-      // Inner glow
-      var g=ctx.createRadialGradient(x,y,r*0.3,x,y,r*3.5);
-      g.addColorStop(0,golden?'rgba(255,210,60,0.85)':'rgba(255,255,180,0.65)');
-      g.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.beginPath(); ctx.arc(x,y,r*3.5,0,Math.PI*2);
-      ctx.fillStyle=g; ctx.fill();
-
-      // Disk
-      var d=ctx.createRadialGradient(x-r*.22,y-r*.22,0,x,y,r);
-      d.addColorStop(0,'#ffffff');
-      d.addColorStop(0.45,golden?'#ffcc44':'#fff7b0');
-      d.addColorStop(1,golden?'rgba(255,95,10,0.8)':'rgba(255,225,60,0.6)');
-      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-      ctx.fillStyle=d; ctx.fill();
-
-      // Horizon haze when low
-      if(e<0.28){
-        var hY=HORIZON*H, hf=1-e/0.28;
-        var hz=ctx.createRadialGradient(x,hY,0,x,hY,W*0.58);
-        hz.addColorStop(0,'rgba(255,145,30,'+(0.42*hf)+')');
-        hz.addColorStop(0.45,'rgba(255,80,10,'+(0.14*hf)+')');
-        hz.addColorStop(1,'rgba(0,0,0,0)');
-        ctx.fillStyle=hz; ctx.fillRect(0,hY-90,W,130);
-      }
-    }
-
-    /* ── Rolling hill silhouettes ── */
-    function drawHills(s) {
-      var hY=HORIZON*H, e=s.elev;
-      // 3 hill layers, front-most darkest/most saturated
-      var layers=[
-        {yB:hY+8,  amp:28, f1:0.0035,f2:0.0082, ph1:0.8,  ph2:1.4, dayC:'#1f4d0c', nightC:'#060d03'},
-        {yB:hY+3,  amp:18, f1:0.0055,f2:0.011,  ph1:2.1,  ph2:0.3, dayC:'#285e12', nightC:'#070f03'},
-        {yB:hY-2,  amp:10, f1:0.0075,f2:0.014,  ph1:4.5,  ph2:2.8, dayC:'#316618', nightC:'#090f04'},
-      ];
-      layers.forEach(function(l,li){
-        ctx.beginPath();
-        ctx.moveTo(-2,H);
-        ctx.lineTo(-2,l.yB);
-        for(var x=0;x<=W+2;x+=2){
-          var hy=l.yB-Math.sin(x*l.f1+l.ph1)*l.amp
-                    -Math.sin(x*l.f2+l.ph2)*l.amp*0.38;
-          ctx.lineTo(x,hy);
-        }
-        ctx.lineTo(W+2,H); ctx.closePath();
-
-        // Golden-hour warm tint on front-facing slopes
-        var dayColor=l.dayC;
-        if(s.isDay && e<0.25){
-          var wf=clamp(1-e/0.25,0,1)*0.55;
-          dayColor=lerpHex(l.dayC,'#3d2a04',wf);
-        }
-        var finalC=s.nightAlpha>0.5?l.nightC:dayColor;
-        // Atmospheric: farther = slightly lighter
-        ctx.globalAlpha=0.72+li*0.12;
-        ctx.fillStyle=finalC; ctx.fill();
-        ctx.globalAlpha=1;
-      });
-    }
-
-    /* ── Ground fill ── */
-    function drawGround(s) {
-      var hY=HORIZON*H, e=s.elev;
-      var gc1=s.nightAlpha>0.7?'#050b02':(e<0.18?'#1e4508':'#1b4a09');
-      var gc2=s.nightAlpha>0.7?'#020601':(e<0.18?'#122a06':'#102e06');
-      var g=ctx.createLinearGradient(0,hY,0,H);
-      g.addColorStop(0,gc1); g.addColorStop(1,gc2);
-      ctx.fillStyle=g; ctx.fillRect(0,hY,W,H-hY);
-      // golden warmth
-      if(s.isDay && e<0.26){
-        var wa=clamp(1-e/0.26,0,1)*0.19;
-        var wg=ctx.createLinearGradient(0,hY,0,H);
-        wg.addColorStop(0,'rgba(255,125,20,'+wa+')');
-        wg.addColorStop(1,'rgba(0,0,0,0)');
-        ctx.fillStyle=wg; ctx.fillRect(0,hY,W,H-hY);
-      }
-      // horizon haze
-      var hz=ctx.createLinearGradient(0,hY,0,hY+(H-hY)*0.1);
-      hz.addColorStop(0,'rgba(190,215,235,0.22)');
-      hz.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=hz; ctx.fillRect(0,hY,W,(H-hY)*0.1);
-    }
-
-    /* ══════════════════════════════════════════════════
-       SOLAR PANELS ON STANDS — sun-tracking tilt
-       ══════════════════════════════════════════════════ */
-    function drawPanels(s) {
-      var hY=HORIZON*H, groundH=H-hY, e=s.elev;
-
-      // Sun-tracking angles
-      // Azimuth: -π/2 (sunrise/left) → 0 (noon) → π/2 (sunset/right)
-      var sunAz = (s.sunT - 0.5) * Math.PI;
-      // Elevation: 0=horizon, π/2=zenith — add small offset so panels never fully edge-on
-      var sunEl = Math.max(0.12, e) * (Math.PI / 2);
-
-      var SCALE=W*0.60, MIN_Z=1.0, MAX_Z=17.0;
-      // Stand height in world units (scales with perspective)
-      var POLE_WU   = 0.55;
-      // Panel glass height in world units
-      var PANEL_H_WU = 0.52;
-      // Panel occupies this fraction of the row slot depth
-      var SLOT_FRAC  = 0.0;  // panel is now a flat elevated quad, not a perspective slice
-
-      // Shimmer management
-      if(s.isDay && Math.random()<0.055){
-        shimmers.push({
-          row:Math.floor(Math.random()*NUM_ROWS),
-          col:Math.floor(Math.random()*COLS),
-          life:1, speed:0.022+Math.random()*0.028
-        });
-      }
-      shimmers=shimmers.filter(function(sh){sh.life-=sh.speed;return sh.life>0;});
-
-      for(var row=0;row<NUM_ROWS;row++){
-        // World depth of this panel row (row 0 = farthest)
-        var z = MAX_Z - (row / NUM_ROWS) * (MAX_Z - MIN_Z);
-        if(z<=0.1) continue;
-
-        // Perspective scale factor at this depth
-        var sc = SCALE / z;
-
-        // Ground y at this row — with hillside offset
-        // Hillside: far rows sit on higher terrain (subtract sc*hillFrac from y)
-        var hillFrac = (1 - row/(NUM_ROWS-1)) * 0.18;
-        var yGround  = Math.min(H+4, hY + sc + hillFrac*sc*2);
-        if(yGround > H+2) continue;
-
-        // Field half-width at this depth
-        var hw = sc;   // half-width of panel field in pixels
-        var pw = hw*2/COLS; // per-panel slot width
-
-        // Pole top y (bottom of panel pivot, above ground)
-        var poleH_px   = POLE_WU   * sc;
-        var panelCY    = yGround - poleH_px;   // panel centre y
-
-        // ── Panel tilt projection ──
-        // panelDY: half the panel height as seen on screen (vertical component of tilted panel)
-        //   = PANEL_H_WU/2 * sin(sunEl) * sc
-        //   When sun is overhead (sunEl=π/2): full height visible
-        //   When sun at horizon (sunEl→0):   panel nearly edge-on → min clamped
-        var panelDY = PANEL_H_WU * 0.5 * Math.max(0.22, Math.sin(sunEl)) * sc;
-
-        // panelDX: horizontal skew of top edge vs bottom (from E-W azimuth tracking)
-        //   Top of panel leans toward the sun horizontally
-        //   = PANEL_H_WU/2 * cos(sunEl) * sin(sunAz) * sc * 0.5
-        var panelDX = PANEL_H_WU * 0.5 * Math.cos(sunEl) * Math.sin(sunAz) * sc * 0.48;
-
-        for(var col=0;col<COLS;col++){
-          var gap  = pw*0.07;
-          var halfPW = pw*0.5 - gap;
-          var cx   = W/2 - hw + (col+0.5)*pw;
-
-          // Panel top edge (faces toward sun) — shifts horizontally with azimuth
-          var topCX = cx + panelDX;
-          var topY  = panelCY - panelDY;
-          // Panel bottom edge (ground side) — shifts opposite direction
-          var botCX = cx - panelDX;
-          var botY  = panelCY + panelDY;
-
-          // 4 corners of the panel face
-          var TL={x:topCX-halfPW, y:topY};
-          var TR={x:topCX+halfPW, y:topY};
-          var BR={x:botCX+halfPW, y:botY};
-          var BL={x:botCX-halfPW, y:botY};
-
-          // ── Draw mounting pole ──
-          var poleW=Math.max(0.7, sc*0.028);
-          ctx.beginPath();
-          ctx.moveTo(cx-poleW*0.5, yGround);
-          ctx.lineTo(cx-poleW*0.5, panelCY+panelDY);
-          ctx.lineTo(cx+poleW*0.5, panelCY+panelDY);
-          ctx.lineTo(cx+poleW*0.5, yGround);
-          ctx.closePath();
-          ctx.fillStyle=s.nightAlpha>0.6?'rgba(40,38,28,0.7)':'rgba(80,75,50,0.75)';
-          ctx.fill();
-
-          // Horizontal mounting rail
-          ctx.beginPath();
-          ctx.moveTo(BL.x, botY); ctx.lineTo(BR.x, botY);
-          ctx.strokeStyle=s.nightAlpha>0.6?'rgba(50,48,35,0.6)':'rgba(90,85,55,0.65)';
-          ctx.lineWidth=Math.max(0.8, poleW);
-          ctx.stroke();
-
-          // ── Panel reflectivity (panels track sun so all lit uniformly by elevation) ──
-          var baseReflect = s.isDay ? clamp(e*1.4, 0.1, 0.9) : 0.08;
-
-          // Shimmer boost
-          var shimB=0;
-          shimmers.forEach(function(sh){
-            if(sh.row===row && sh.col===col) shimB=sh.life*0.55;
-          });
-          var refI = clamp(baseReflect+shimB, 0, 1);
-          var golden = e<0.22 && s.isDay;
-
-          // ── Panel face ──
-          ctx.beginPath();
-          ctx.moveTo(TL.x,TL.y); ctx.lineTo(TR.x,TR.y);
-          ctx.lineTo(BR.x,BR.y); ctx.lineTo(BL.x,BL.y);
-          ctx.closePath();
-
-          var bright=s.nightAlpha>0.7?0.18:(0.32+e*0.38);
-          var pG=ctx.createLinearGradient(TL.x,TL.y,BL.x,BL.y);
-          pG.addColorStop(0,'rgba('+(32+Math.round(refI*60))+',' +(56+Math.round(refI*75))+','+(104+Math.round(refI*80))+','+(bright+0.08)+')');
-          pG.addColorStop(0.5,'rgba('+(20+Math.round(refI*38))+','+(38+Math.round(refI*58))+','+(72+Math.round(refI*78))+','+bright+')');
-          pG.addColorStop(1,'rgba(10,20,42,'+bright+')');
-          ctx.fillStyle=pG; ctx.fill();
-
-          // Frame border
-          ctx.strokeStyle='rgba(45,68,115,0.55)';
-          ctx.lineWidth=0.6; ctx.stroke();
-
-          // Cell grid lines (3 cols × 5 rows)
-          ctx.strokeStyle='rgba(38,62,108,0.22)';
-          ctx.lineWidth=0.28;
-          for(var ci=1;ci<3;ci++){
-            var f=ci/3;
-            ctx.beginPath();
-            ctx.moveTo(TL.x+(TR.x-TL.x)*f, TL.y+(TR.y-TL.y)*f);
-            ctx.lineTo(BL.x+(BR.x-BL.x)*f, BL.y+(BR.y-BL.y)*f);
-            ctx.stroke();
-          }
-          for(var ri=1;ri<5;ri++){
-            var f=ri/5;
-            ctx.beginPath();
-            ctx.moveTo(TL.x+(BL.x-TL.x)*f, TL.y+(BL.y-TL.y)*f);
-            ctx.lineTo(TR.x+(BR.x-TR.x)*f, TR.y+(BR.y-TR.y)*f);
-            ctx.stroke();
-          }
-
-          // ── Specular glint ──
-          if(refI>0.1 && s.isDay){
-            // Glint position shifts toward the sun's horizontal direction
-            var glintFrac = clamp(0.3 + s.sunT*0.4, 0.25, 0.75);
-            var glintVertFrac = clamp(0.15 + (1-e)*0.2, 0.1, 0.4);
-            var gx=TL.x+(TR.x-TL.x)*glintFrac;
-            var gy=TL.y+(BL.y-TL.y)*glintVertFrac;
-            var gr=(TR.x-TL.x)*0.72;
-            var rR=golden?255:155, rG=golden?210:225, rB=golden?75:255;
-            var refGr=ctx.createRadialGradient(gx,gy,0,gx,gy,gr);
-            refGr.addColorStop(0,'rgba('+rR+','+rG+','+rB+','+(refI*0.82)+')');
-            refGr.addColorStop(0.45,'rgba('+rR+','+rG+','+rB+','+(refI*0.22)+')');
-            refGr.addColorStop(1,'rgba(0,0,0,0)');
-            ctx.beginPath();
-            ctx.moveTo(TL.x,TL.y); ctx.lineTo(TR.x,TR.y);
-            ctx.lineTo(BR.x,BR.y); ctx.lineTo(BL.x,BL.y);
-            ctx.closePath();
-            ctx.fillStyle=refGr; ctx.fill();
-          }
-        }
-
-        // Ground shadow strip in front of each row
-        var shadowY=yGround;
-        if(shadowY<H){
-          var shadowH=Math.min(poleH_px*0.3, 8);
-          var shG=ctx.createLinearGradient(0,shadowY,0,shadowY+shadowH);
-          shG.addColorStop(0,'rgba(0,0,0,0.18)');
-          shG.addColorStop(1,'rgba(0,0,0,0)');
-          ctx.fillStyle=shG;
-          ctx.fillRect(W/2-hw*1.05, shadowY, hw*2.1, shadowH);
-        }
-      }
-    }
-
+    var frame = 0;
     function draw() {
-      ctx.clearRect(0,0,W,H);
-      var s=getState();
-      drawSky(s);
-      drawStars(s);
-      drawMoon(s);
-      drawSun(s);
-      drawHills(s);
-      drawGround(s);
-      drawPanels(s);
+      ctx.clearRect(0, 0, W, H);
+      frame++;
+
+      // ── Draw static grid lines (very faint) ──
+      ctx.strokeStyle = 'rgba(14,165,233,0.04)';
+      ctx.lineWidth = 0.5;
+      for (var gx = 0; gx < W; gx += CELL) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+      }
+      for (var gy = 0; gy < H; gy += CELL) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+      }
+
+      // ── Grid intersection dots ──
+      for (var ix = 0; ix < W; ix += CELL) {
+        for (var iy = 0; iy < H; iy += CELL) {
+          ctx.beginPath();
+          ctx.arc(ix, iy, 1, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(14,165,233,0.12)';
+          ctx.fill();
+        }
+      }
+
+      // ── Stars ──
+      stars.forEach(function(s) {
+        s.twinklePhase += s.twinkleSpeed;
+        var a = s.alpha * (0.7 + 0.3 * Math.sin(s.twinklePhase));
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = s.color.replace(')', ',' + a + ')').replace('rgb(', 'rgba(');
+        // Handle hex colors
+        if (s.color[0] === '#') {
+          ctx.globalAlpha = a;
+          ctx.fillStyle = s.color;
+        }
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+
+      // ── Power grid pulses ──
+      if (frame % 22 === 0) spawnPulse();
+      gridPulses = gridPulses.filter(function(p) {
+        p.pos += p.dir * p.speed;
+        var dead = p.horiz
+          ? (p.dir > 0 ? p.pos - p.len > W : p.pos + p.len < 0)
+          : (p.dir > 0 ? p.pos - p.len > H : p.pos + p.len < 0);
+        if (dead) return false;
+
+        var x1, y1, x2, y2;
+        if (p.horiz) {
+          y1 = y2 = p.fixed;
+          x1 = p.pos - p.dir * p.len; x2 = p.pos;
+        } else {
+          x1 = x2 = p.fixed;
+          y1 = p.pos - p.dir * p.len; y2 = p.pos;
+        }
+        var grad = ctx.createLinearGradient(x1, y1, x2, y2);
+        grad.addColorStop(0, 'rgba(14,165,233,0)');
+        grad.addColorStop(0.7, 'rgba(14,165,233,' + (p.alpha * 0.6) + ')');
+        grad.addColorStop(1,   'rgba(255,255,255,' + p.alpha + ')');
+        ctx.beginPath();
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = p.horiz ? 1.5 : 1;
+        ctx.stroke();
+        // bright head dot
+        ctx.beginPath();
+        ctx.arc(x2, y2, 2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,' + p.alpha + ')';
+        ctx.fill();
+        return true;
+      });
+
+      // ── Shooting stars ──
+      if (frame % 280 === 0) spawnShooter();
+      shooters = shooters.filter(function(s) {
+        s.x += s.vx; s.y += s.vy; s.life -= 0.018;
+        if (s.life <= 0) return false;
+        var grad = ctx.createLinearGradient(s.x - s.vx * (s.len / s.vx), s.y - s.vy * (s.len / s.vx), s.x, s.y);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(1, 'rgba(255,255,255,' + (s.alpha * s.life) + ')');
+        ctx.beginPath();
+        ctx.moveTo(s.x - s.len, s.y - s.len * (s.vy / s.vx));
+        ctx.lineTo(s.x, s.y);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        return true;
+      });
+
       requestAnimationFrame(draw);
     }
     draw();
