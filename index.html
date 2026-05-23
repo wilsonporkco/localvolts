@@ -2959,7 +2959,7 @@ function alertRenderRules() {
       '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">',
       '    <div>',
       '      <div class="settings-label" style="margin-bottom:4px;">NMI</div>',
-      '      <select class="settings-input" style="width:100%;" onchange="alertUpdateRule(' + idx + ',\'nmi\',this.value)">',
+      '      <select class="settings-input" style="width:100%;" onchange="alertUpdateNMI(' + idx + ',this.value)">',
       '        <option value="">— select NMI —</option>',
       nmiOpts,
       '      </select>',
@@ -2972,19 +2972,11 @@ function alertRenderRules() {
       '      </select>',
       '    </div>',
       '  </div>',
-      '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">',
-      '    <div>',
-      '      <div class="settings-label" style="margin-bottom:4px;">Price threshold (¢/kWh)</div>',
-      '      <input type="number" class="settings-input" style="width:100%;" min="0" max="100" step="0.5"',
-      '        value="' + (rule.threshold != null ? rule.threshold : 5) + '"',
-      '        onchange="alertUpdateRule(' + idx + ',\'threshold\',parseFloat(this.value))">',
-      '    </div>',
-      '    <div>',
-      '      <div class="settings-label" style="margin-bottom:4px;">NMI display name</div>',
-      '      <input type="text" class="settings-input" style="width:100%;" placeholder="e.g. Wilson Home"',
-      '        value="' + (rule.nmiName || '') + '"',
-      '        onchange="alertUpdateRule(' + idx + ',\'nmiName\',this.value)">',
-      '    </div>',
+      '  <div style="margin-bottom:10px;">',
+      '    <div class="settings-label" style="margin-bottom:4px;">Price threshold (¢/kWh)</div>',
+      '    <input type="number" class="settings-input" style="width:180px;" min="0" max="100" step="0.5"',
+      '      value="' + (rule.threshold != null ? rule.threshold : 5) + '"',
+      '      onchange="alertUpdateRule(' + idx + ',\'threshold\',parseFloat(this.value))">',
       '  </div>',
       '  <div>',
       '    <div class="settings-label" style="margin-bottom:4px;">Email addresses <span style="font-weight:400;color:var(--text3);">(one per line)</span></div>',
@@ -3021,6 +3013,12 @@ function alertRemoveRule(idx) {
 
 function alertUpdateRule(idx, field, value) {
   if (alertRules[idx]) alertRules[idx][field] = value;
+}
+
+function alertUpdateNMI(idx, nmi) {
+  if (!alertRules[idx]) return;
+  alertRules[idx].nmi     = nmi;
+  alertRules[idx].nmiName = nmiNames[nmi] || nmi;
 }
 
 function alertUpdateRuleAccount(idx, accIdxStr) {
