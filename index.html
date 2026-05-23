@@ -994,16 +994,28 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center;">
             <button class="btn btn-ghost" onclick="alertAddRule()">+ Add NMI rule</button>
             <button class="btn btn-primary" onclick="alertsSave()">Save &amp; sync alerts</button>
-            <span id="alerts-confirm" style="font-family:var(--mono);font-size:11px;color:var(--green);display:none;">Saved ✓</span>
-            <span id="alerts-error" style="font-family:var(--mono);font-size:11px;color:var(--red);display:none;"></span>
+          </div>
+
+          <!-- JSON copy panel (shown after Save) -->
+          <div id="alerts-copy-panel" style="display:none;margin-top:16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Almost done — paste this into Netlify</div>
+            <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6;">
+              1. Copy the JSON below<br>
+              2. Go to your Netlify site → <strong>Site configuration → Environment variables</strong><br>
+              3. Add (or update) a variable named <code style="background:#e2e8f0;padding:1px 5px;border-radius:3px;">LV_ALERTS_CONFIG</code> and paste the JSON as the value<br>
+              4. Click <strong>Deploys → Trigger deploy → Deploy site</strong>
+            </div>
+            <textarea id="alerts-json-output" rows="4" readonly
+              style="width:100%;font-family:var(--mono);font-size:11px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:8px;resize:vertical;box-sizing:border-box;"></textarea>
+            <button class="btn btn-ghost" style="margin-top:8px;font-size:12px;" onclick="alertsCopyJson()">📋 Copy to clipboard</button>
+            <span id="alerts-copied" style="font-size:11px;color:var(--green);margin-left:8px;display:none;">Copied!</span>
           </div>
 
           <div class="settings-hint" style="margin-top:14px;line-height:1.7;">
             <strong>One-time Netlify setup:</strong><br>
             In your Netlify site → <em>Environment variables</em>, add:<br>
-            &nbsp;&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">RESEND_API_KEY</code> — your Resend API key<br>
-            &nbsp;&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">ALERT_FROM_EMAIL</code> — e.g. <em>alerts@yourdomain.com</em>
-            (or leave blank to use Resend's shared sender)
+            &nbsp;&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">SMTP2GO_API_KEY</code> — your SMTP2GO API key<br>
+            &nbsp;&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">ALERT_FROM_EMAIL</code> — e.g. <em>alerts@wilsonporkco.com.au</em>
           </div>
         </div>
 
@@ -2907,22 +2919,17 @@ function $d(id) { return document.getElementById(id); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    PRICE ALERT SETTINGS UI
-   Stores config in Netlify Blobs via /.netlify/functions/alerts-config
+   Rules are stored in localStorage. "Save & sync alerts" shows the JSON
+   that the user pastes into Netlify as the LV_ALERTS_CONFIG env var.
    ══════════════════════════════════════════════════════════════════════════ */
 
 var alertRules = [];   // array of { nmi, nmiName, partner, apikey, threshold, emails[] }
-var ALERTS_ENDPOINT = '/.netlify/functions/alerts-config';
 
-/* ── Load rules from Netlify Blobs on Settings tab open ── */
-async function alertsLoad() {
-  var container = document.getElementById('alert-rules-container');
-  if (!container) return;
+/* ── Load rules from localStorage ── */
+function alertsLoad() {
   try {
-    var res = await fetch(ALERTS_ENDPOINT);
-    if (res.ok) {
-      var data = await res.json();
-      alertRules = Array.isArray(data.alerts) ? data.alerts : [];
-    }
+    var saved = localStorage.getItem('lv_alert_rules');
+    alertRules = saved ? JSON.parse(saved) : [];
   } catch (e) {
     alertRules = [];
   }
@@ -2954,7 +2961,11 @@ function alertRenderRules() {
       '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;" id="alert-rule-' + idx + '">',
       '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">',
       '    <strong style="font-size:13px;">Rule ' + (idx + 1) + '</strong>',
-      '    <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;color:var(--red);" onclick="alertRemoveRule(' + idx + ')">Remove</button>',
+      '    <div style="display:flex;gap:8px;align-items:center;">',
+      '      <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;" onclick="alertSendTest(' + idx + ')" id="test-btn-' + idx + '">Send test email</button>',
+      '      <span id="test-status-' + idx + '" style="font-size:11px;display:none;"></span>',
+      '      <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;color:var(--red);" onclick="alertRemoveRule(' + idx + ')">Remove</button>',
+      '    </div>',
       '  </div>',
       '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">',
       '    <div>',
@@ -3029,34 +3040,70 @@ function alertUpdateRuleAccount(idx, accIdxStr) {
   alertRules[idx].apikey  = acc.apikey;
 }
 
-async function alertsSave() {
-  var confirmEl = document.getElementById('alerts-confirm');
-  var errorEl   = document.getElementById('alerts-error');
-  if (confirmEl) { confirmEl.style.display = 'none'; }
-  if (errorEl)   { errorEl.style.display   = 'none'; }
-
+function alertsSave() {
   // Validate each rule
   for (var i = 0; i < alertRules.length; i++) {
     var r = alertRules[i];
-    if (!r.nmi)              { alert('Rule ' + (i+1) + ': please select an NMI.');         return; }
-    if (!r.apikey)           { alert('Rule ' + (i+1) + ': please select an API account.'); return; }
+    if (!r.nmi)    { alert('Rule ' + (i+1) + ': please select an NMI.');         return; }
+    if (!r.apikey) { alert('Rule ' + (i+1) + ': please select an API account.'); return; }
     if (!r.emails || !r.emails.length) { alert('Rule ' + (i+1) + ': enter at least one email address.'); return; }
-    // Fill nmiName from nmiNames if blank
     if (!r.nmiName && nmiNames[r.nmi]) r.nmiName = nmiNames[r.nmi];
   }
 
+  // Save to localStorage
+  try { localStorage.setItem('lv_alert_rules', JSON.stringify(alertRules)); } catch(e) {}
+
+  // Show the JSON the user needs to paste into Netlify as LV_ALERTS_CONFIG
+  var json = JSON.stringify({ alerts: alertRules });
+  var panel = document.getElementById('alerts-copy-panel');
+  var output = document.getElementById('alerts-json-output');
+  if (panel)  { panel.style.display = 'block'; }
+  if (output) { output.value = json; output.select(); }
+}
+
+function alertsCopyJson() {
+  var output = document.getElementById('alerts-json-output');
+  if (output) {
+    output.select();
+    document.execCommand('copy');
+    var copied = document.getElementById('alerts-copied');
+    if (copied) { copied.style.display = 'inline'; setTimeout(function() { copied.style.display = 'none'; }, 2000); }
+  }
+}
+
+async function alertSendTest(idx) {
+  var rule = alertRules[idx];
+  if (!rule) return;
+  if (!rule.emails || !rule.emails.length) { alert('Add at least one email address first.'); return; }
+  if (!rule.nmi) { alert('Select an NMI first.'); return; }
+
+  var btn    = document.getElementById('test-btn-' + idx);
+  var status = document.getElementById('test-status-' + idx);
+  if (btn)    { btn.disabled = true; btn.textContent = 'Sending…'; }
+  if (status) { status.style.display = 'none'; }
+
   try {
-    var res = await fetch(ALERTS_ENDPOINT, {
+    var res = await fetch('/.netlify/functions/test-alert', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ alerts: alertRules })
+      body: JSON.stringify({
+        emails:  rule.emails,
+        nmi:     rule.nmi,
+        nmiName: rule.nmiName || nmiNames[rule.nmi] || rule.nmi
+      })
     });
-    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
-    if (confirmEl) { confirmEl.style.display = 'inline'; setTimeout(function() { confirmEl.style.display = 'none'; }, 3000); }
+    var data = await res.json();
+    if (res.ok && data.ok) {
+      if (status) { status.textContent = '✓ Sent!'; status.style.color = 'var(--green)'; status.style.display = 'inline'; }
+    } else {
+      if (status) { status.textContent = '✗ Failed — check SMTP2GO env vars'; status.style.color = 'var(--red)'; status.style.display = 'inline'; }
+    }
   } catch (e) {
-    if (errorEl) { errorEl.textContent = 'Save failed: ' + e.message; errorEl.style.display = 'inline'; }
-    console.error('alertsSave error:', e);
+    if (status) { status.textContent = '✗ ' + e.message; status.style.color = 'var(--red)'; status.style.display = 'inline'; }
   }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Send test email'; }
+  if (status) { setTimeout(function() { if (status) status.style.display = 'none'; }, 5000); }
 }
 
 /* ── Load alerts when Settings tab is clicked ── */
