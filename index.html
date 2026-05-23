@@ -980,6 +980,33 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <button class="btn btn-primary" onclick="saveNames()" style="margin-top:12px;">Save names</button>
           <span id="names-confirm" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;display:none;">Saved</span>
         </div>
+        <!-- ── Price Alert settings ──────────────────────────────────── -->
+        <div class="settings-section" id="alerts-section">
+          <div class="settings-title">⚡ Price alerts <span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:8px;font-family:var(--mono);">email when forecast cost &lt; threshold</span></div>
+          <div class="settings-hint" style="margin-bottom:14px;">
+            Each rule monitors one NMI. When the 24-hour forecast drops below your chosen price,
+            everyone on the email list gets a message showing the price and how long the window lasts.
+            Alerts are sent at most once per cheap window (no spam).
+          </div>
+
+          <div id="alert-rules-container"></div>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center;">
+            <button class="btn btn-ghost" onclick="alertAddRule()">+ Add NMI rule</button>
+            <button class="btn btn-primary" onclick="alertsSave()">Save &amp; sync alerts</button>
+            <span id="alerts-confirm" style="font-family:var(--mono);font-size:11px;color:var(--green);display:none;">Saved ✓</span>
+            <span id="alerts-error" style="font-family:var(--mono);font-size:11px;color:var(--red);display:none;"></span>
+          </div>
+
+          <div class="settings-hint" style="margin-top:14px;line-height:1.7;">
+            <strong>One-time Netlify setup:</strong><br>
+            In your Netlify site → <em>Environment variables</em>, add:<br>
+            &nbsp;&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">RESEND_API_KEY</code> — your Resend API key<br>
+            &nbsp;&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">ALERT_FROM_EMAIL</code> — e.g. <em>alerts@yourdomain.com</em>
+            (or leave blank to use Resend's shared sender)
+          </div>
+        </div>
+
         <div class="settings-section">
           <div class="settings-title">Diagnostics</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -2877,6 +2904,181 @@ window.lvChangePIN = function() {
 };
 
 function $d(id) { return document.getElementById(id); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRICE ALERT SETTINGS UI
+   Stores config in Netlify Blobs via /.netlify/functions/alerts-config
+   ══════════════════════════════════════════════════════════════════════════ */
+
+var alertRules = [];   // array of { nmi, nmiName, partner, apikey, threshold, emails[] }
+var ALERTS_ENDPOINT = '/.netlify/functions/alerts-config';
+
+/* ── Load rules from Netlify Blobs on Settings tab open ── */
+async function alertsLoad() {
+  var container = document.getElementById('alert-rules-container');
+  if (!container) return;
+  try {
+    var res = await fetch(ALERTS_ENDPOINT);
+    if (res.ok) {
+      var data = await res.json();
+      alertRules = Array.isArray(data.alerts) ? data.alerts : [];
+    }
+  } catch (e) {
+    alertRules = [];
+  }
+  alertRenderRules();
+}
+
+/* ── Render the rules UI ── */
+function alertRenderRules() {
+  var container = document.getElementById('alert-rules-container');
+  if (!container) return;
+
+  if (!alertRules.length) {
+    container.innerHTML = '<p style="font-size:12px;color:var(--text3);margin-bottom:4px;">No alert rules yet — click "+ Add NMI rule" to get started.</p>';
+    return;
+  }
+
+  container.innerHTML = alertRules.map(function(rule, idx) {
+    var nmiOpts = knownNMIs.map(function(n) {
+      var name = nmiNames[n] ? nmiNames[n] + ' (' + n + ')' : n;
+      return '<option value="' + n + '"' + (rule.nmi === n ? ' selected' : '') + '>' + name + '</option>';
+    }).join('');
+
+    var accOpts = lvAccounts.map(function(a, ai) {
+      var sel = (rule.partner === a.partner && rule.apikey === a.apikey) ? ' selected' : '';
+      return '<option value="' + ai + '"' + sel + '>' + (a.label || 'Account ' + (ai+1)) + '</option>';
+    }).join('');
+
+    return [
+      '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;" id="alert-rule-' + idx + '">',
+      '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">',
+      '    <strong style="font-size:13px;">Rule ' + (idx + 1) + '</strong>',
+      '    <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;color:var(--red);" onclick="alertRemoveRule(' + idx + ')">Remove</button>',
+      '  </div>',
+      '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">',
+      '    <div>',
+      '      <div class="settings-label" style="margin-bottom:4px;">NMI</div>',
+      '      <select class="settings-input" style="width:100%;" onchange="alertUpdateRule(' + idx + ',\'nmi\',this.value)">',
+      '        <option value="">— select NMI —</option>',
+      nmiOpts,
+      '      </select>',
+      '    </div>',
+      '    <div>',
+      '      <div class="settings-label" style="margin-bottom:4px;">API account</div>',
+      '      <select class="settings-input" style="width:100%;" onchange="alertUpdateRuleAccount(' + idx + ',this.value)">',
+      '        <option value="">— select account —</option>',
+      accOpts,
+      '      </select>',
+      '    </div>',
+      '  </div>',
+      '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">',
+      '    <div>',
+      '      <div class="settings-label" style="margin-bottom:4px;">Price threshold (¢/kWh)</div>',
+      '      <input type="number" class="settings-input" style="width:100%;" min="0" max="100" step="0.5"',
+      '        value="' + (rule.threshold != null ? rule.threshold : 5) + '"',
+      '        onchange="alertUpdateRule(' + idx + ',\'threshold\',parseFloat(this.value))">',
+      '    </div>',
+      '    <div>',
+      '      <div class="settings-label" style="margin-bottom:4px;">NMI display name</div>',
+      '      <input type="text" class="settings-input" style="width:100%;" placeholder="e.g. Wilson Home"',
+      '        value="' + (rule.nmiName || '') + '"',
+      '        onchange="alertUpdateRule(' + idx + ',\'nmiName\',this.value)">',
+      '    </div>',
+      '  </div>',
+      '  <div>',
+      '    <div class="settings-label" style="margin-bottom:4px;">Email addresses <span style="font-weight:400;color:var(--text3);">(one per line)</span></div>',
+      '    <textarea class="settings-input" rows="3" style="width:100%;resize:vertical;font-family:var(--mono);font-size:12px;"',
+      '      onchange="alertUpdateRule(' + idx + ',\'emails\',this.value.split(\'\\n\').map(function(e){return e.trim();}).filter(Boolean))"',
+      '      onkeyup="alertUpdateRule(' + idx + ',\'emails\',this.value.split(\'\\n\').map(function(e){return e.trim();}).filter(Boolean))">' + (rule.emails || []).join('\n') + '</textarea>',
+      '  </div>',
+      '</div>'
+    ].join('\n');
+  }).join('');
+}
+
+function alertAddRule() {
+  // Pre-fill account from active Localvolts account
+  var acc = getActiveAccount() || {};
+  alertRules.push({
+    nmi: knownNMIs[0] || '',
+    nmiName: knownNMIs[0] ? (nmiNames[knownNMIs[0]] || '') : '',
+    partner: acc.partner || '',
+    apikey: acc.apikey || '',
+    threshold: 5,
+    emails: []
+  });
+  alertRenderRules();
+  // Scroll new rule into view
+  var lastRule = document.getElementById('alert-rule-' + (alertRules.length - 1));
+  if (lastRule) lastRule.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function alertRemoveRule(idx) {
+  alertRules.splice(idx, 1);
+  alertRenderRules();
+}
+
+function alertUpdateRule(idx, field, value) {
+  if (alertRules[idx]) alertRules[idx][field] = value;
+}
+
+function alertUpdateRuleAccount(idx, accIdxStr) {
+  var accIdx = parseInt(accIdxStr, 10);
+  if (isNaN(accIdx) || !lvAccounts[accIdx]) return;
+  var acc = lvAccounts[accIdx];
+  alertRules[idx].partner = acc.partner;
+  alertRules[idx].apikey  = acc.apikey;
+}
+
+async function alertsSave() {
+  var confirmEl = document.getElementById('alerts-confirm');
+  var errorEl   = document.getElementById('alerts-error');
+  if (confirmEl) { confirmEl.style.display = 'none'; }
+  if (errorEl)   { errorEl.style.display   = 'none'; }
+
+  // Validate each rule
+  for (var i = 0; i < alertRules.length; i++) {
+    var r = alertRules[i];
+    if (!r.nmi)              { alert('Rule ' + (i+1) + ': please select an NMI.');         return; }
+    if (!r.apikey)           { alert('Rule ' + (i+1) + ': please select an API account.'); return; }
+    if (!r.emails || !r.emails.length) { alert('Rule ' + (i+1) + ': enter at least one email address.'); return; }
+    // Fill nmiName from nmiNames if blank
+    if (!r.nmiName && nmiNames[r.nmi]) r.nmiName = nmiNames[r.nmi];
+  }
+
+  try {
+    var res = await fetch(ALERTS_ENDPOINT, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ alerts: alertRules })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
+    if (confirmEl) { confirmEl.style.display = 'inline'; setTimeout(function() { confirmEl.style.display = 'none'; }, 3000); }
+  } catch (e) {
+    if (errorEl) { errorEl.textContent = 'Save failed: ' + e.message; errorEl.style.display = 'inline'; }
+    console.error('alertsSave error:', e);
+  }
+}
+
+/* ── Load alerts when Settings tab is clicked ── */
+(function() {
+  var settingsNavItem = document.querySelector('[onclick*="panel-settings"]') ||
+                        document.querySelector('.nav-item[data-panel="settings"]');
+  // Hook into the existing panel-switching mechanism
+  var origShowPanel = window.showPanel;
+  window.showPanel = function(id) {
+    if (origShowPanel) origShowPanel(id);
+    if (id === 'panel-settings') {
+      setTimeout(alertsLoad, 100);
+    }
+  };
+  // Also load if Settings is already active on page load
+  var panel = document.getElementById('panel-settings');
+  if (panel && panel.classList.contains('active')) {
+    setTimeout(alertsLoad, 500);
+  }
+})();
 </script>
 
 <script>

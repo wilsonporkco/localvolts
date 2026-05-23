@@ -1,0 +1,9 @@
+{
+  "name": "localvolts-energy-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Localvolts Energy Dashboard with price alerts",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
