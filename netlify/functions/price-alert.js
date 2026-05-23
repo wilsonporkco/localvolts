@@ -1,12 +1,11 @@
 /**
  * price-alert.js — Netlify scheduled function
  * Runs every 30 minutes. Checks Localvolts forecast prices for each
- * configured NMI and sends email via Resend when cost < threshold.
+ * configured NMI and sends email via SMTP2GO when cost < threshold.
  *
  * Required env vars (set in Netlify site → Environment variables):
- *   RESEND_API_KEY     — from resend.com
- *   ALERT_FROM_EMAIL   — e.g. "Energy Monitor <alerts@yourdomain.com>"
- *                        or "onboarding@resend.dev" for Resend's shared sender
+ *   SMTP2GO_API_KEY    — your SMTP2GO API key
+ *   ALERT_FROM_EMAIL   — verified sender in SMTP2GO, e.g. "alerts@yourdomain.com"
  *
  * Schedule: every 30 minutes (configured in netlify.toml)
  */
@@ -14,13 +13,17 @@
 const { getStore } = require('@netlify/blobs');
 
 exports.handler = async function (event, context) {
-  const RESEND_KEY  = process.env.RESEND_API_KEY;
-  const FROM_EMAIL  = process.env.ALERT_FROM_EMAIL || 'onboarding@resend.dev';
+  const SMTP2GO_KEY = process.env.SMTP2GO_API_KEY;
+  const FROM_EMAIL  = process.env.ALERT_FROM_EMAIL;
   const SITE_URL    = (process.env.URL || '').replace(/\/$/, '');
 
-  if (!RESEND_KEY) {
-    console.error('[price-alert] RESEND_API_KEY not set — aborting');
-    return { statusCode: 500, body: 'RESEND_API_KEY not configured' };
+  if (!SMTP2GO_KEY) {
+    console.error('[price-alert] SMTP2GO_API_KEY not set — aborting');
+    return { statusCode: 500, body: 'SMTP2GO_API_KEY not configured' };
+  }
+  if (!FROM_EMAIL) {
+    console.error('[price-alert] ALERT_FROM_EMAIL not set — aborting');
+    return { statusCode: 500, body: 'ALERT_FROM_EMAIL not configured' };
   }
 
   // ── Load alert config from Netlify Blobs ──────────────────────────────────
@@ -188,29 +191,27 @@ exports.handler = async function (event, context) {
           '</div>'
         ].join('\n');
 
-        // Send via Resend
-        var emailRes = await fetch('https://api.resend.com/emails', {
+        // Send via SMTP2GO API
+        var emailRes = await fetch('https://api.smtp2go.com/v3/email/send', {
           method:  'POST',
-          headers: {
-            'Authorization': 'Bearer ' + RESEND_KEY,
-            'Content-Type':  'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            from:    FROM_EMAIL,
-            to:      emails,
-            subject: subject,
-            html:    html
+            api_key:   SMTP2GO_KEY,
+            to:        emails,
+            sender:    FROM_EMAIL,
+            subject:   subject,
+            html_body: html
           })
         });
 
-        if (emailRes.ok) {
+        var emailBody = await emailRes.json();
+        if (emailRes.ok && emailBody.data && emailBody.data.succeeded > 0) {
           sentAlerts[windowKey] = now;
           var msg = 'Sent alert for ' + nmi + ' — ' + win.minRate.toFixed(1) + 'c for ' + durStr + ' starting ' + fmtAEST(startMs);
           results.push(msg);
           console.log('[price-alert]', msg);
         } else {
-          var errText = await emailRes.text();
-          console.error('[price-alert] Resend error for', nmi, ':', errText);
+          console.error('[price-alert] SMTP2GO error for', nmi, ':', JSON.stringify(emailBody));
         }
       }
     } catch (e) {
