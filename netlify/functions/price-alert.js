@@ -10,8 +10,6 @@
  * Schedule: every 30 minutes (configured in netlify.toml)
  */
 
-const { getStore } = require('@netlify/blobs');
-
 exports.handler = async function (event, context) {
   const SMTP2GO_KEY = process.env.SMTP2GO_API_KEY;
   const FROM_EMAIL  = process.env.ALERT_FROM_EMAIL;
@@ -26,12 +24,10 @@ exports.handler = async function (event, context) {
     return { statusCode: 500, body: 'ALERT_FROM_EMAIL not configured' };
   }
 
-  // ── Load alert config from Netlify Blobs ──────────────────────────────────
-  const store = getStore('lv-alerts');
-
-  let config;
+  // ── Load alert config from LV_ALERTS_CONFIG env var ──────────────────────
+  var config;
   try {
-    config = await store.get('config', { type: 'json' });
+    config = JSON.parse(process.env.LV_ALERTS_CONFIG || '{"alerts":[]}');
   } catch (e) {
     config = null;
   }
@@ -41,19 +37,11 @@ exports.handler = async function (event, context) {
     return { statusCode: 200, body: 'No alerts configured' };
   }
 
-  // ── Load sent-alert tracking (avoid duplicate emails) ────────────────────
-  let sentAlerts = {};
-  try {
-    sentAlerts = (await store.get('sent-alerts', { type: 'json' })) || {};
-  } catch (e) {
-    sentAlerts = {};
-  }
-
-  // Expire keys older than 48 hours
+  // ── Sent-alert deduplication (in-memory per invocation) ──────────────────
+  // Note: since we no longer use Blobs, deduplication resets each run.
+  // The window key check below still prevents multiple sends within one run.
+  var sentAlerts = {};
   const now = Date.now();
-  Object.keys(sentAlerts).forEach(function (k) {
-    if (sentAlerts[k] < now - 48 * 3600 * 1000) delete sentAlerts[k];
-  });
 
   const results = [];
 
@@ -218,9 +206,6 @@ exports.handler = async function (event, context) {
       console.error('[price-alert] Error processing NMI', nmi, ':', e.message);
     }
   }
-
-  // ── Persist updated sent-alert tracking ───────────────────────────────────
-  await store.set('sent-alerts', JSON.stringify(sentAlerts));
 
   var summary = 'Checked ' + config.alerts.length + ' NMI(s). ' +
                 (results.length ? 'Sent ' + results.length + ' alert(s).' : 'No new alerts.');
