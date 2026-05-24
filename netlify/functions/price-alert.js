@@ -1,13 +1,13 @@
 /**
  * price-alert.js — Netlify scheduled function
- * Runs every 30 minutes. Checks Localvolts forecast prices for each
- * configured NMI and sends email via SMTP2GO when cost < threshold.
+ * Runs every 30 minutes. Queries Supabase lv_intervals directly (same source
+ * as the dashboard 24-hour forecast chart) for each configured NMI and sends
+ * email via SMTP2GO when forecast cost < threshold.
  *
- * Required env vars (set in Netlify site → Environment variables):
- *   SMTP2GO_API_KEY           — your SMTP2GO API key
- *   ALERT_FROM_EMAIL          — verified sender, e.g. alerts@wilsonporkco.com.au
- *   UPSTASH_REDIS_REST_URL    — from your Upstash Redis dashboard
- *   UPSTASH_REDIS_REST_TOKEN  — from your Upstash Redis dashboard
+ * Required env vars:
+ *   SMTP2GO_API_KEY       — your SMTP2GO API key
+ *   ALERT_FROM_EMAIL      — verified sender, e.g. alerts@wilsonporkco.com.au
+ *   SUPABASE_SERVICE_KEY  — from Supabase → Settings → API → service_role key
  *
  * Schedule: every 30 minutes (configured in netlify.toml)
  */
@@ -16,7 +16,7 @@ const SUPABASE_URL = 'https://zmljvelkbhzalrniebhz.supabase.co';
 
 function sbHeaders() {
   var key = process.env.SUPABASE_SERVICE_KEY;
-  return { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' };
+  return { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Accept': 'application/json' };
 }
 
 async function sbGet(key) {
@@ -29,89 +29,89 @@ async function sbGet(key) {
 async function sbSet(key, value) {
   await fetch(SUPABASE_URL + '/rest/v1/lv_config', {
     method:  'POST',
-    headers: Object.assign({ 'Prefer': 'resolution=merge-duplicates' }, sbHeaders()),
+    headers: Object.assign({ 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }, sbHeaders()),
     body:    JSON.stringify({ key: key, value: value })
   });
+}
+
+// Query lv_intervals for a given NMI over the next 24 hours
+async function fetchForecast(nmi, now) {
+  var fromTs = new Date(now).toISOString();
+  var toTs   = new Date(now + 24 * 3600 * 1000).toISOString();
+
+  // Try both column name formats (camelCase and snake_case)
+  var url = SUPABASE_URL + '/rest/v1/lv_intervals' +
+    '?select=nmi,intervalEnd,interval_end,costsAllVarRate,costs_rate' +
+    '&nmi=eq.' + encodeURIComponent(nmi) +
+    '&interval_end=gte.' + encodeURIComponent(fromTs) +
+    '&interval_end=lt.'  + encodeURIComponent(toTs) +
+    '&order=interval_end.asc' +
+    '&limit=1000';
+
+  var res  = await fetch(url, { headers: sbHeaders() });
+  var data = await res.json();
+  if (!Array.isArray(data)) return [];
+
+  // Normalise field names — handle both snake_case and camelCase
+  return data.map(function(r) {
+    return {
+      intervalEnd:      r.intervalEnd      || r.interval_end,
+      costsAllVarRate:  r.costsAllVarRate  != null ? r.costsAllVarRate  : r.costs_rate
+    };
+  }).filter(function(r) { return r.intervalEnd; });
 }
 
 exports.handler = async function (event, context) {
   const SMTP2GO_KEY = process.env.SMTP2GO_API_KEY;
   const FROM_EMAIL  = process.env.ALERT_FROM_EMAIL;
-  const SITE_URL    = (process.env.URL || '').replace(/\/$/, '');
 
-  if (!SMTP2GO_KEY) {
-    console.error('[price-alert] SMTP2GO_API_KEY not set — aborting');
-    return { statusCode: 500, body: 'SMTP2GO_API_KEY not configured' };
-  }
-  if (!FROM_EMAIL) {
-    console.error('[price-alert] ALERT_FROM_EMAIL not set — aborting');
-    return { statusCode: 500, body: 'ALERT_FROM_EMAIL not configured' };
-  }
-  if (!process.env.SUPABASE_SERVICE_KEY) {
-    console.error('[price-alert] SUPABASE_SERVICE_KEY not configured — aborting');
-    return { statusCode: 500, body: 'SUPABASE_SERVICE_KEY not configured' };
-  }
+  if (!SMTP2GO_KEY) { console.error('[price-alert] SMTP2GO_API_KEY not set'); return { statusCode: 500, body: 'SMTP2GO_API_KEY not configured' }; }
+  if (!FROM_EMAIL)  { console.error('[price-alert] ALERT_FROM_EMAIL not set');  return { statusCode: 500, body: 'ALERT_FROM_EMAIL not configured' }; }
+  if (!process.env.SUPABASE_SERVICE_KEY) { console.error('[price-alert] SUPABASE_SERVICE_KEY not set'); return { statusCode: 500, body: 'SUPABASE_SERVICE_KEY not configured' }; }
 
-  // ── Load alert config from Supabase ──────────────────────────────────────
   var config = await sbGet('alerts');
-
   if (!config || !Array.isArray(config.alerts) || !config.alerts.length) {
-    console.log('[price-alert] No alerts configured — nothing to do');
+    console.log('[price-alert] No alerts configured');
     return { statusCode: 200, body: 'No alerts configured' };
   }
 
-  // ── Load sent-alert tracking (avoid duplicate emails) ────────────────────
   var sentAlerts = (await sbGet('sent-alerts')) || {};
-
-  // Expire keys older than 48 hours
   const now = Date.now();
-  Object.keys(sentAlerts).forEach(function (k) {
+  Object.keys(sentAlerts).forEach(function(k) {
     if (sentAlerts[k] < now - 48 * 3600 * 1000) delete sentAlerts[k];
   });
 
-  const results = [];
+  var results = [];
 
-  // ── Process each alert rule ───────────────────────────────────────────────
   for (var i = 0; i < config.alerts.length; i++) {
     var alert     = config.alerts[i];
     var nmi       = alert.nmi;
     var nmiName   = alert.nmiName || nmi;
     var emails    = alert.emails  || [];
     var threshold = typeof alert.threshold === 'number' ? alert.threshold : 5;
-    var partner   = alert.partner;
-    var apikey    = alert.apikey;
 
-    if (!emails.length || !apikey || !partner || !nmi) {
-      console.log('[price-alert] Skipping incomplete rule for NMI:', nmi);
-      continue;
-    }
+    if (!emails.length || !nmi) { console.log('[price-alert] Skipping incomplete rule for NMI:', nmi); continue; }
 
     try {
-      var fromTs = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-      var toTs   = new Date(now + 24 * 3600 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+      console.log('[price-alert] Querying Supabase forecast for', nmi);
+      var data = await fetchForecast(nmi, now);
+      console.log('[price-alert] Got', data.length, 'intervals for', nmi);
 
-      var params = new URLSearchParams({ NMI: nmi, from: fromTs, to: toTs, _partner: partner, _apikey: apikey });
-      var apiUrl = SITE_URL + '/.netlify/functions/proxy?' + params.toString();
-      console.log('[price-alert] Fetching forecast for', nmi);
+      if (!data.length) { console.log('[price-alert] No forecast data for', nmi); continue; }
 
-      var res  = await fetch(apiUrl);
-      var body = await res.text();
-      var data;
-      try { data = JSON.parse(body); } catch (e) { throw new Error('Bad JSON from proxy: ' + body.slice(0, 120)); }
-      if (!res.ok) throw new Error('Proxy error ' + res.status + ': ' + body.slice(0, 120));
-      if (!Array.isArray(data) || !data.length) { console.log('[price-alert] No forecast data for', nmi); continue; }
+      // Log sample rates so we can debug threshold issues
+      var sample = data.slice(0, 3).map(function(r) { return r.costsAllVarRate; });
+      console.log('[price-alert] Sample costsAllVarRate for', nmi, ':', JSON.stringify(sample));
 
-      var cheap = data.filter(function (r) {
+      var cheap = data.filter(function(r) {
         var rate = parseFloat(r.costsAllVarRate);
         return !isNaN(rate) && rate < threshold;
       });
 
-      if (!cheap.length) { console.log('[price-alert] No cheap intervals for', nmi, '(threshold', threshold + 'c)'); continue; }
+      if (!cheap.length) { console.log('[price-alert] No cheap intervals for', nmi, '(threshold', threshold + 'c, min rate:', Math.min.apply(null, data.map(function(r){return parseFloat(r.costsAllVarRate)||999;})).toFixed(2) + 'c)'); continue; }
 
       // Find contiguous cheap windows
-      var windows = [];
-      var wStart = null, wEnd = null, wMin = Infinity;
-
+      var windows = [], wStart = null, wEnd = null, wMin = Infinity;
       for (var j = 0; j < cheap.length; j++) {
         var interval = cheap[j];
         var rate     = parseFloat(interval.costsAllVarRate);
@@ -121,8 +121,7 @@ exports.handler = async function (event, context) {
           var prevMs = new Date(wEnd.intervalEnd).getTime();
           var thisMs = new Date(interval.intervalEnd).getTime();
           if (thisMs - prevMs <= 35 * 60 * 1000) {
-            wEnd = interval;
-            if (rate < wMin) wMin = rate;
+            wEnd = interval; if (rate < wMin) wMin = rate;
           } else {
             windows.push({ start: wStart, end: wEnd, minRate: wMin });
             wStart = interval; wEnd = interval; wMin = rate;
@@ -176,11 +175,10 @@ exports.handler = async function (event, context) {
         ].join('\n');
 
         var emailRes = await fetch('https://api.smtp2go.com/v3/email/send', {
-          method:  'POST',
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ api_key: SMTP2GO_KEY, to: emails, sender: FROM_EMAIL, subject: subject, html_body: html })
         });
-
         var emailBody = await emailRes.json();
         if (emailRes.ok && emailBody.data && emailBody.data.succeeded > 0) {
           sentAlerts[windowKey] = now;
@@ -196,7 +194,6 @@ exports.handler = async function (event, context) {
     }
   }
 
-  // ── Persist updated sent-alert tracking ───────────────────────────────────
   await sbSet('sent-alerts', sentAlerts);
 
   var summary = 'Checked ' + config.alerts.length + ' NMI(s). ' +
