@@ -3030,7 +3030,7 @@ function alertUpdateRuleAccount(idx, accIdxStr) {
   alertRules[idx].apikey  = acc.apikey;
 }
 
-function alertsSave() {
+async function alertsSave() {
   // Validate each rule
   for (var i = 0; i < alertRules.length; i++) {
     var r = alertRules[i];
