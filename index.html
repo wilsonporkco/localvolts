@@ -2915,11 +2915,16 @@ function $d(id) { return document.getElementById(id); }
 
 var alertRules = [];   // array of { nmi, nmiName, partner, apikey, threshold, emails[] }
 
-/* ── Load rules from localStorage ── */
-function alertsLoad() {
+/* ── Load rules from Supabase ── */
+async function alertsLoad() {
   try {
-    var saved = localStorage.getItem('lv_alert_rules');
-    alertRules = saved ? JSON.parse(saved) : [];
+    var res = await fetch('/.netlify/functions/alerts-config');
+    if (res.ok) {
+      var data = await res.json();
+      alertRules = Array.isArray(data.alerts) ? data.alerts : [];
+    } else {
+      alertRules = [];
+    }
   } catch (e) {
     alertRules = [];
   }
@@ -3039,9 +3044,6 @@ async function alertsSave() {
     if (!r.emails || !r.emails.length) { alert('Rule ' + (i+1) + ': enter at least one email address.'); return; }
     if (!r.nmiName && nmiNames[r.nmi]) r.nmiName = nmiNames[r.nmi];
   }
-
-  // Save to localStorage
-  try { localStorage.setItem('lv_alert_rules', JSON.stringify(alertRules)); } catch(e) {}
 
   var panel  = document.getElementById('alerts-copy-panel');
   var saveBtn = document.querySelector('[onclick="alertsSave()"]');
