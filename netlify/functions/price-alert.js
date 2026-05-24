@@ -63,8 +63,9 @@ async function fetchForecast(nmi, now) {
   }).filter(function(r) { return r.intervalEnd; });
 }
 
-// Build a static SVG line chart of the 24-hour price forecast.
-// winStartMs / winEndMs mark the cheap window (highlighted in green).
+// Build a 24-hour price chart as a base64-encoded SVG image.
+// Embedding as <img src="data:image/svg+xml;base64,..."> works in all email clients
+// that strip inline SVG but still render images (Gmail, Outlook, Apple Mail, etc).
 function buildPriceChart(data, threshold, winStartMs, winEndMs) {
   var pts = data.filter(function(r) {
     return r.costsAllVarRate != null && !isNaN(parseFloat(r.costsAllVarRate));
@@ -133,9 +134,9 @@ function buildPriceChart(data, threshold, winStartMs, winEndMs) {
     xLabels.push({ x: xPx(lt), label: String(hr).padStart(2, '0') + ':00' });
   }
 
-  return [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" style="display:block;border-radius:8px;">',
-    '<rect width="' + W + '" height="' + H + '" fill="#fff"/>',
+  var svgStr = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '">',
+    '<rect width="' + W + '" height="' + H + '" fill="#ffffff"/>',
     // Y grid lines
     yTicks.map(function(tv) {
       return '<line x1="' + padL + '" y1="' + yPx(tv).toFixed(1) + '" x2="' + (padL + cW) + '" y2="' + yPx(tv).toFixed(1) + '" stroke="#f1f5f9" stroke-width="1"/>';
@@ -146,21 +147,25 @@ function buildPriceChart(data, threshold, winStartMs, winEndMs) {
     '<path d="' + areaD + '" fill="#0ea5e9" fill-opacity="0.07"/>',
     // Threshold dashed line
     '<line x1="' + padL + '" y1="' + tyPx + '" x2="' + (padL + cW) + '" y2="' + tyPx + '" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.8"/>',
-    '<text x="' + (padL + cW - 2) + '" y="' + (parseFloat(tyPx) - 4) + '" fill="#ef4444" font-size="9" font-family="sans-serif" text-anchor="end">' + threshold + 'c limit</text>',
+    '<text x="' + (padL + cW - 2) + '" y="' + (parseFloat(tyPx) - 4) + '" fill="#ef4444" font-size="9" font-family="Arial,sans-serif" text-anchor="end">' + threshold + 'c limit</text>',
     // Price line
     '<path d="' + lineD + '" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>',
     // X baseline
     '<line x1="' + padL + '" y1="' + (padT + cH) + '" x2="' + (padL + cW) + '" y2="' + (padT + cH) + '" stroke="#e2e8f0" stroke-width="1"/>',
     // Y tick labels
     yTicks.map(function(tv) {
-      return '<text x="' + (padL - 4) + '" y="' + (parseFloat(yPx(tv).toFixed(1)) + 3) + '" fill="#94a3b8" font-size="9" font-family="sans-serif" text-anchor="end">' + tv.toFixed(0) + 'c</text>';
+      return '<text x="' + (padL - 4) + '" y="' + (parseFloat(yPx(tv).toFixed(1)) + 3) + '" fill="#94a3b8" font-size="9" font-family="Arial,sans-serif" text-anchor="end">' + tv.toFixed(0) + 'c</text>';
     }).join(''),
     // X time labels
     xLabels.map(function(l) {
-      return '<text x="' + l.x.toFixed(1) + '" y="' + (H - 6) + '" fill="#94a3b8" font-size="9" font-family="sans-serif" text-anchor="middle">' + l.label + '</text>';
+      return '<text x="' + l.x.toFixed(1) + '" y="' + (H - 6) + '" fill="#94a3b8" font-size="9" font-family="Arial,sans-serif" text-anchor="middle">' + l.label + '</text>';
     }).join(''),
     '</svg>'
-  ].join('\n');
+  ].join('');
+
+  // Encode as base64 image so it renders in all email clients (Gmail strips inline SVG)
+  var b64 = Buffer.from(svgStr).toString('base64');
+  return '<img src="data:image/svg+xml;base64,' + b64 + '" width="' + W + '" height="' + H + '" style="display:block;border-radius:8px;" alt="24-hour price forecast"/>';
 }
 
 exports.handler = async function (event, context) {
