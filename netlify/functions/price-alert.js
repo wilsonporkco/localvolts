@@ -39,9 +39,9 @@ async function fetchForecast(nmi, now) {
   var fromTs = new Date(now).toISOString();
   var toTs   = new Date(now + 24 * 3600 * 1000).toISOString();
 
-  // Try both column name formats (camelCase and snake_case)
+  // Supabase lv_intervals uses snake_case column names
   var url = SUPABASE_URL + '/rest/v1/lv_intervals' +
-    '?select=nmi,intervalEnd,interval_end,costsAllVarRate,costs_rate' +
+    '?select=nmi,interval_end,costs_rate' +
     '&nmi=eq.' + encodeURIComponent(nmi) +
     '&interval_end=gte.' + encodeURIComponent(fromTs) +
     '&interval_end=lt.'  + encodeURIComponent(toTs) +
@@ -50,13 +50,15 @@ async function fetchForecast(nmi, now) {
 
   var res  = await fetch(url, { headers: sbHeaders() });
   var data = await res.json();
-  if (!Array.isArray(data)) return [];
+  if (!Array.isArray(data)) {
+    console.error('[price-alert] Supabase error for', nmi, ':', JSON.stringify(data));
+    return [];
+  }
 
-  // Normalise field names — handle both snake_case and camelCase
   return data.map(function(r) {
     return {
-      intervalEnd:      r.intervalEnd      || r.interval_end,
-      costsAllVarRate:  r.costsAllVarRate  != null ? r.costsAllVarRate  : r.costs_rate
+      intervalEnd:     r.interval_end,
+      costsAllVarRate: r.costs_rate
     };
   }).filter(function(r) { return r.intervalEnd; });
 }
