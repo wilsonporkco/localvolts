@@ -3110,11 +3110,12 @@ async function alertSendTest(idx) {
   if (status) { setTimeout(function() { if (status) status.style.display = 'none'; }, 5000); }
 }
 
-/* ── Load alerts when Settings tab is clicked ── */
+/* ── Load alerts on page load and whenever Settings tab is shown ── */
 (function() {
-  var settingsNavItem = document.querySelector('[onclick*="panel-settings"]') ||
-                        document.querySelector('.nav-item[data-panel="settings"]');
-  // Hook into the existing panel-switching mechanism
+  // Always load on page load (after a short delay so the page is ready)
+  setTimeout(alertsLoad, 1000);
+
+  // Also reload whenever the Settings panel is opened
   var origShowPanel = window.showPanel;
   window.showPanel = function(id) {
     if (origShowPanel) origShowPanel(id);
@@ -3122,11 +3123,6 @@ async function alertSendTest(idx) {
       setTimeout(alertsLoad, 100);
     }
   };
-  // Also load if Settings is already active on page load
-  var panel = document.getElementById('panel-settings');
-  if (panel && panel.classList.contains('active')) {
-    setTimeout(alertsLoad, 500);
-  }
 })();
 </script>
 
