@@ -257,8 +257,6 @@ exports.handler = async function (event, context) {
           return d.toISOString().replace('T', ' ').slice(0, 16) + ' AEST';
         }
 
-        var chartSVG = buildPriceChart(data, threshold, startMs, endMs);
-
         var subject = '⚡ Cheap power alert: ' + nmiName + ' — ' + win.minRate.toFixed(1) + '¢/kWh for ' + durStr;
 
         var html = [
@@ -284,14 +282,6 @@ exports.handler = async function (event, context) {
           '        </td>',
           '      </tr>',
           '    </table>',
-
-          // 24-hour price chart
-          chartSVG ? (
-            '    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 14px 10px;margin-bottom:16px;">' +
-            '      <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">24-hour price forecast · AEST <span style="color:#10b981;">█</span> cheap window &nbsp; <span style="color:#ef4444;">- -</span> your limit</div>' +
-            chartSVG +
-            '    </div>'
-          ) : '',
 
           // Details
           '    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;font-size:13px;color:#475569;line-height:2;">',
