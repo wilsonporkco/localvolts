@@ -993,7 +993,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center;">
             <button class="btn btn-ghost" onclick="alertAddRule()">+ Add NMI rule</button>
-            <button class="btn btn-primary" onclick="alertsSave()">Save &amp; sync alerts</button>
+            <button class="btn btn-primary" id="alerts-save-btn" onclick="alertsSave()">Save &amp; sync alerts</button>
           </div>
 
           <!-- Save confirmation -->
@@ -2930,6 +2930,7 @@ async function alertsLoad() {
   }
   alertsLoaded = true;
   alertRenderRules();
+  alertUpdateSaveBtn();
 }
 
 /* ── Render the rules UI ── */
@@ -3008,6 +3009,7 @@ function alertAddRule() {
     emails: []
   });
   alertRenderRules();
+  alertUpdateSaveBtn();
   // Scroll new rule into view
   var lastRule = document.getElementById('alert-rule-' + (alertRules.length - 1));
   if (lastRule) lastRule.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -3016,10 +3018,19 @@ function alertAddRule() {
 function alertRemoveRule(idx) {
   alertRules.splice(idx, 1);
   alertRenderRules();
+  alertUpdateSaveBtn();
 }
 
 function alertUpdateRule(idx, field, value) {
-  if (alertRules[idx]) alertRules[idx][field] = value;
+  if (alertRules[idx]) {
+    alertRules[idx][field] = value;
+    alertUpdateSaveBtn();
+  }
+}
+
+function alertUpdateSaveBtn() {
+  var btn = document.getElementById('alerts-save-btn');
+  if (btn) btn.textContent = 'Save & sync ' + alertRules.length + ' rule' + (alertRules.length !== 1 ? 's' : '');
 }
 
 function alertUpdateNMI(idx, nmi) {
@@ -3046,9 +3057,10 @@ async function alertsSave() {
     if (!r.nmiName && nmiNames[r.nmi]) r.nmiName = nmiNames[r.nmi];
   }
 
-  var panel  = document.getElementById('alerts-copy-panel');
-  var saveBtn = document.querySelector('[onclick="alertsSave()"]');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  var panel   = document.getElementById('alerts-copy-panel');
+  var saveBtn = document.getElementById('alerts-save-btn');
+  var count   = alertRules.length;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving ' + count + ' rule' + (count !== 1 ? 's' : '') + '…'; }
 
   try {
     var res = await fetch('/.netlify/functions/alerts-config', {
@@ -3059,11 +3071,14 @@ async function alertsSave() {
     var data = await res.json();
     if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
     if (panel) { panel.style.display = 'block'; }
+    if (saveBtn) { saveBtn.textContent = '✓ Saved ' + count + ' rule' + (count !== 1 ? 's' : ''); }
+    setTimeout(function() { alertUpdateSaveBtn(); }, 2000);
   } catch (e) {
     alert('Save failed: ' + e.message);
+    if (saveBtn) { saveBtn.disabled = false; alertUpdateSaveBtn(); }
   }
 
-  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save & sync alerts'; }
+  if (saveBtn) { saveBtn.disabled = false; }
 }
 
 function alertsCopyJson() {
