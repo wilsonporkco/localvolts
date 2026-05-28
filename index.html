@@ -1130,6 +1130,17 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <span id="sigen-discover-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);display:none;"></span>
           </div>
           <div id="sigen-test-out" style="font-family:var(--mono);font-size:11px;margin-top:10px;display:none;padding:8px 10px;background:var(--bg2,#f5f5f5);border-radius:6px;white-space:pre-wrap;word-break:break-all;"></div>
+
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb;">
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:0.1em;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Onboard a system</div>
+            <div class="settings-hint" style="margin-bottom:10px;">Before your API key can read data from a system, it must be onboarded (paired). Enter the System ID from your Sigenergy app or installer documentation, then click Onboard.</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <input type="text" class="settings-input" id="sigen-onboard-id" placeholder="System ID (e.g. 1234567890)" style="max-width:280px;">
+              <button class="btn btn-ghost" onclick="sigenOnboard()">🔗 Onboard system</button>
+              <button class="btn btn-ghost" style="color:var(--red,#e55);" onclick="sigenOffboard()">✕ Offboard</button>
+            </div>
+            <div id="sigen-onboard-status" style="font-family:var(--mono);font-size:11px;margin-top:8px;min-height:16px;"></div>
+          </div>
         </div>
 
         <!-- ── Price Alert settings ──────────────────────────────────── -->
@@ -3668,6 +3679,67 @@ async function setBatteryMode(mode) {
     }
   } finally {
     if (btns) Array.from(btns.querySelectorAll('button')).forEach(function(b){ b.disabled=false; });
+  }
+}
+
+// ── Onboard / Offboard ───────────────────────────────────────────────────────
+async function sigenOnboard() {
+  var systemId = (document.getElementById('sigen-onboard-id')||{value:''}).value.trim();
+  var statusEl = document.getElementById('sigen-onboard-status');
+  if (!systemId) { if(statusEl){statusEl.textContent='Enter a System ID first.';statusEl.style.color='orange';} return; }
+  var key = (document.getElementById('sigen-appkey')||{value:sigenAppKey}).value.trim() || sigenAppKey;
+  var sec = (document.getElementById('sigen-appsecret')||{value:sigenAppSecret}).value.trim() || sigenAppSecret;
+  if (!key||!sec) { if(statusEl){statusEl.textContent='Save your credentials first.';statusEl.style.color='orange';} return; }
+  if(statusEl){statusEl.textContent='Onboarding…';statusEl.style.color='var(--text3)';}
+  try {
+    var res = await fetch(SIGEN_PROXY, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'onboard', appKey:key, appSecret:sec, systemId:systemId })
+    });
+    var json = await res.json();
+    if (json.error) throw new Error(json.error);
+    if (json.code !== 0) throw new Error('API ('+json.code+'): '+(json.msg||'failed'));
+    if(statusEl){statusEl.textContent='✓ Onboarded — click Discover systems to load it.';statusEl.style.color='var(--green)';}
+    // Auto-add to systems list
+    var existing = sigenSystems.find(function(s){return s.systemId===systemId;});
+    if (!existing) {
+      sigenSystems.push({ systemId:systemId, systemName:systemId, nmi:'' });
+      try{localStorage.setItem('sigen_systems',JSON.stringify(sigenSystems));}catch(e){}
+      sbSettingsSave('sigen_systems', sigenSystems);
+    }
+    if (!sigenActiveSystemId) { sigenActiveSystemId=systemId; try{localStorage.setItem('sigen_active_system',systemId);}catch(e){} }
+    renderSigenSystemRows();
+    rebuildBatterySelect();
+    // Now try to discover to get the proper name
+    setTimeout(discoverSigenSystems, 500);
+  } catch(err) {
+    if(statusEl){statusEl.textContent='✗ '+err.message;statusEl.style.color='var(--red)';}
+  }
+}
+
+async function sigenOffboard() {
+  var systemId = (document.getElementById('sigen-onboard-id')||{value:''}).value.trim();
+  var statusEl = document.getElementById('sigen-onboard-status');
+  if (!systemId) { if(statusEl){statusEl.textContent='Enter the System ID to offboard.';statusEl.style.color='orange';} return; }
+  if (!confirm('Offboard system '+systemId+'? This removes API access to it.')) return;
+  var key = (document.getElementById('sigen-appkey')||{value:sigenAppKey}).value.trim() || sigenAppKey;
+  var sec = (document.getElementById('sigen-appsecret')||{value:sigenAppSecret}).value.trim() || sigenAppSecret;
+  if(statusEl){statusEl.textContent='Offboarding…';statusEl.style.color='var(--text3)';}
+  try {
+    var res = await fetch(SIGEN_PROXY, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'offboard', appKey:key, appSecret:sec, systemId:systemId })
+    });
+    var json = await res.json();
+    if (json.error) throw new Error(json.error);
+    if (json.code !== 0) throw new Error('API ('+json.code+'): '+(json.msg||'failed'));
+    if(statusEl){statusEl.textContent='✓ Offboarded.';statusEl.style.color='var(--green)';}
+    sigenSystems = sigenSystems.filter(function(s){return s.systemId!==systemId;});
+    try{localStorage.setItem('sigen_systems',JSON.stringify(sigenSystems));}catch(e){}
+    sbSettingsSave('sigen_systems', sigenSystems);
+    renderSigenSystemRows();
+  } catch(err) {
+    if(statusEl){statusEl.textContent='✗ '+err.message;statusEl.style.color='var(--red)';}
   }
 }
 
