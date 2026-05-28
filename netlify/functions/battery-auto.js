@@ -126,75 +126,24 @@ async function sigenPost(path, body) {
   return res.json();
 }
 
-// MQTT battery command (duplicated from sigenergy.js so this function is self-contained)
-function sendMqttCommand(token, commandPayload) {
-  return new Promise((resolve, reject) => {
-    let mqtt;
-    try { mqtt = require('mqtt'); } catch (e) {
-      return reject(new Error('mqtt package not installed in netlify/functions/package.json'));
-    }
-
-    const clientId = `sigen-auto-${Date.now()}`;
-    const client   = mqtt.connect({
-      host:            MQTT_HOST,
-      port:            MQTT_PORT,
-      protocol:        'mqtt',
-      clientId,
-      username:        token,
-      password:        '',
-      clean:           true,
-      connectTimeout:  10_000,
-      reconnectPeriod: 0
-    });
-
-    const TOPIC_PUB = 'openapi/instruction/command';
-    const TOPIC_SUB = `openapi/instruction/command/reply/${clientId}`;
-    let   timer     = null;
-    let   settled   = false;
-
-    const finish = (err, data) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      client.end(true);
-      if (err) reject(err);
-      else     resolve(data || { success: true });
-    };
-
-    client.on('error',   (err) => finish(new Error(`MQTT error: ${err.message}`)));
-    client.on('offline', ()    => finish(new Error(`MQTT broker unreachable (${MQTT_HOST}:${MQTT_PORT})`)));
-
-    client.on('connect', () => {
-      client.subscribe(TOPIC_SUB, { qos: 1 }, (err) => {
-        if (err) return finish(new Error(`MQTT subscribe: ${err.message}`));
-
-        client.publish(TOPIC_PUB, JSON.stringify({
-          accessToken: token,
-          replyTopic:  TOPIC_SUB,
-          commands:    [commandPayload]
-        }), { qos: 1 }, (err) => {
-          if (err) return finish(new Error(`MQTT publish: ${err.message}`));
-          timer = setTimeout(() => {
-            finish(null, { success: true, warning: 'No reply within timeout — command likely accepted' });
-          }, 15_000);
-        });
-      });
-    });
-
-    client.on('message', (topic, msg) => {
-      if (topic !== TOPIC_SUB) return;
-      try {
-        const reply = JSON.parse(msg.toString());
-        if (reply.code !== 0 && reply.code !== undefined) {
-          finish(new Error(`Command rejected (code ${reply.code}): ${reply.msg}`));
-        } else {
-          finish(null, { success: true, reply });
-        }
-      } catch {
-        finish(null, { success: true, rawReply: msg.toString() });
-      }
-    });
+// ── REST battery command ──────────────────────────────────────────────────────
+// Uses POST /openapi/system/battery/command (no MQTT needed)
+async function sendBatteryCommand(token, commandPayload) {
+  const body = {
+    accessToken: token,
+    commands:    [commandPayload]
+  };
+  const res = await fetch(`${BASE}/openapi/system/battery/command`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body:    JSON.stringify(body)
   });
+  if (res.status === 429) throw new Error('Sigenergy rate limit hit');
+  const json = await res.json();
+  if (json.code !== 0 && json.code !== undefined) {
+    throw new Error(`Battery command rejected (code ${json.code}): ${json.msg || 'unknown'}`);
+  }
+  return { success: true, reply: json };
 }
 
 // ── LocalVolts price fetch ────────────────────────────────────────────────────
@@ -310,13 +259,13 @@ exports.handler = async () => {
       const token  = await getToken();
       const cmd    = {
         systemId,
-        activeMode:        'charge',
-        startTime:         Math.floor(Date.now() / 1000),
-        duration:          10,
+        activeMode:         'charge',
+        startTime:          Math.floor(Date.now() / 1000),
+        duration:           10,
         chargePriorityType: 'GRID'
       };
       if (chargeKw) cmd.chargingPower = chargeKw;
-      const cmdResult = await sendMqttCommand(token, cmd);
+      const cmdResult = await sendBatteryCommand(token, cmd);
       logEntry.cmdResult = cmdResult;
 
     } else if ((wasCharging || wasSelling) && (!isCheap || socTooHigh) && (!canSell || sellFloor)) {
@@ -330,10 +279,13 @@ exports.handler = async () => {
         logEntry.reason = `Conditions no longer met — returning to self-consumption`;
       }
 
-      const modeResult = await sigenPost(
-        `/openapi/systems/${systemId}/ems/energyStorageOperationMode`,
-        { systemId, energyStorageOperationMode: 0 }  // 0 = Max Self-Consumption
-      );
+      const token      = await getToken();
+      const modeResult = await sendBatteryCommand(token, {
+        systemId,
+        activeMode: 'selfConsumption',
+        startTime:  Math.floor(Date.now() / 1000),
+        duration:   10
+      });
       logEntry.cmdResult = modeResult;
 
     } else {
