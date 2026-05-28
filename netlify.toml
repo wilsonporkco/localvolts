@@ -2,7 +2,7 @@
   functions = "netlify/functions"
 
 [functions."price-alert"]
-  schedule = "*/30 * * * *"
+  schedule = "*/5 * * * *"
 
 [functions."battery-auto"]
   schedule = "*/5 * * * *"
