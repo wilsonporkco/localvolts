@@ -901,10 +901,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </label>
             </div>
 
-            <!-- Threshold settings -->
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;">
+            <!-- ── Grid charge rule ── -->
+            <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #f0f0f0;">⚡ Buy — grid charge</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
               <div>
-                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Grid charge when price ≤</div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Charge when import ≤</div>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <input type="number" id="rule-cheap-threshold" value="5" min="-100" max="100" step="1" style="width:68px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
                   <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">c/kWh</span>
@@ -918,7 +919,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                 </div>
               </div>
               <div>
-                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Stop grid charge at</div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Stop charging at</div>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <input type="number" id="rule-max-soc" value="90" min="0" max="100" step="5" style="width:60px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
                   <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">%</span>
@@ -926,15 +927,69 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </div>
             </div>
 
-            <!-- Status row -->
-            <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:11px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+            <!-- ── Sell / feed-in rule ── -->
+            <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #f0f0f0;">💰 Sell — full feed-in</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Feed-in when export ≥</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-sell-threshold" value="20" min="0" max="1000" step="1" style="width:68px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">c/kWh</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Min SOC to sell</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-sell-min-soc" value="20" min="0" max="100" step="5" style="width:60px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">%</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Stop selling at</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-sell-min-stop" value="20" min="0" max="100" step="5" style="width:60px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Power rate limits ── -->
+            <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #f0f0f0;">⚙️ Power rates (optional)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Charge rate</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-charge-kw" placeholder="Max" min="0.1" max="20" step="0.1" style="width:68px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">kW</span>
+                </div>
+                <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:3px;">blank = inverter max</div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Discharge/sell rate</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-sell-kw" placeholder="Max" min="0.1" max="20" step="0.1" style="width:68px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">kW</span>
+                </div>
+                <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:3px;">blank = inverter max</div>
+              </div>
+              <div style="display:flex;align-items:center;">
+                <div style="font-family:var(--mono);font-size:9px;color:var(--text3);line-height:1.5;">These cap the charge &amp; discharge power sent to the battery inverter</div>
+              </div>
+            </div>
+
+            <!-- Status row — shows live import + export prices -->
+            <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:11px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
               <div>
                 <div style="color:var(--text3);margin-bottom:2px;">Import price</div>
                 <div id="rule-current-price" style="font-weight:600;font-size:13px;color:var(--text);">—</div>
               </div>
               <div>
-                <div style="color:var(--text3);margin-bottom:2px;">Threshold</div>
-                <div id="rule-threshold-display" style="font-size:13px;color:var(--text);">—</div>
+                <div style="color:var(--text3);margin-bottom:2px;">Export price</div>
+                <div id="rule-current-export" style="font-weight:600;font-size:13px;color:var(--text);">—</div>
+              </div>
+              <div>
+                <div style="color:var(--text3);margin-bottom:2px;">Thresholds</div>
+                <div id="rule-threshold-display" style="font-size:11px;color:var(--text);line-height:1.5;">—</div>
               </div>
               <div>
                 <div style="color:var(--text3);margin-bottom:2px;">Status</div>
@@ -942,10 +997,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </div>
             </div>
 
-            <!-- Cheap power alert banner -->
+            <!-- Alert banners -->
             <div id="cheap-power-alert" style="display:none;background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #6ee7b7;border-radius:10px;padding:13px 14px;margin-bottom:10px;">
               <div style="font-weight:600;color:#065f46;margin-bottom:3px;">⚡ Cheap power — grid charging active</div>
               <div style="font-size:12px;color:#047857;" id="cheap-power-detail">Price is below your threshold right now.</div>
+            </div>
+            <div id="sell-power-alert" style="display:none;background:linear-gradient(135deg,#fefce8,#fef9c3);border:1px solid #fde047;border-radius:10px;padding:13px 14px;margin-bottom:10px;">
+              <div style="font-weight:600;color:#854d0e;margin-bottom:3px;">💰 High export price — selling to grid</div>
+              <div style="font-size:12px;color:#92400e;" id="sell-power-detail">Export rate is above your sell threshold.</div>
             </div>
 
             <!-- Last checked -->
@@ -4033,12 +4092,17 @@ async function sigenOffboard() {
 }
 
 // ── Auto Rules ────────────────────────────────────────────────────────────────
-var autoRuleEnabled   = false;
-var autoRuleThreshold = 5;    // c/kWh — grid charge when price ≤ this
-var autoRuleMinSoc    = 15;   // % — keep as floor / don't discharge below
-var autoRuleMaxSoc    = 90;   // % — stop grid charging above this
-var autoRuleTimer     = null;
-var lastCheckedSoc    = null; // updated by loadBattery()
+var autoRuleEnabled      = false;
+var autoRuleThreshold    = 5;    // c/kWh — grid charge when import price ≤ this
+var autoRuleMinSoc       = 15;   // % — don't discharge below this floor
+var autoRuleMaxSoc       = 90;   // % — stop grid charging above this
+var autoSellThreshold    = 20;   // c/kWh — feed-in when export price ≥ this
+var autoSellMinSoc       = 20;   // % — only sell if SOC is above this (to start selling)
+var autoSellStopSoc      = 20;   // % — stop selling if SOC drops to this
+var autoChargeKw         = null; // kW — null = use inverter max
+var autoSellKw           = null; // kW — null = use inverter max
+var autoRuleTimer        = null;
+var lastCheckedSoc       = null; // updated by loadBattery()
 
 async function loadRuleSettings() {
   // Load from Supabase first, fall back to localStorage
@@ -4046,25 +4110,43 @@ async function loadRuleSettings() {
     var remote = await sbSettingsLoad('batt_rules');
     if (remote && typeof remote === 'object') {
       autoRuleEnabled   = !!remote.enabled;
-      autoRuleThreshold = parseFloat(remote.threshold ?? 5);
-      autoRuleMinSoc    = parseFloat(remote.minSoc    ?? 15);
-      autoRuleMaxSoc    = parseFloat(remote.maxSoc    ?? 90);
+      autoRuleThreshold = parseFloat(remote.threshold    ?? 5);
+      autoRuleMinSoc    = parseFloat(remote.minSoc       ?? 15);
+      autoRuleMaxSoc    = parseFloat(remote.maxSoc       ?? 90);
+      autoSellThreshold = parseFloat(remote.sellThreshold ?? 20);
+      autoSellMinSoc    = parseFloat(remote.sellMinSoc    ?? 20);
+      autoSellStopSoc   = parseFloat(remote.sellStopSoc   ?? 20);
+      autoChargeKw      = remote.chargeKw != null ? parseFloat(remote.chargeKw) : null;
+      autoSellKw        = remote.sellKw   != null ? parseFloat(remote.sellKw)   : null;
     } else {
-      // fall back to localStorage
-      autoRuleEnabled   = localStorage.getItem('batt_rule_enabled') === 'true';
-      autoRuleThreshold = parseFloat(localStorage.getItem('batt_rule_threshold') || '5');
-      autoRuleMinSoc    = parseFloat(localStorage.getItem('batt_rule_min_soc')   || '15');
-      autoRuleMaxSoc    = parseFloat(localStorage.getItem('batt_rule_max_soc')   || '90');
+      // No Supabase data — use defaults
+      autoRuleEnabled   = false;
+      autoRuleThreshold = 5;
+      autoRuleMinSoc    = 15;
+      autoRuleMaxSoc    = 90;
+      autoSellThreshold = 20;
+      autoSellMinSoc    = 20;
+      autoSellStopSoc   = 20;
+      autoChargeKw      = null;
+      autoSellKw        = null;
     }
   } catch(e) {}
   renderRuleUI();
   if (autoRuleEnabled) startAutoRuleTimer();
+  checkAutoRule(); // always fetch price on panel open, regardless of enabled state
 }
 
 async function saveRuleSettings() {
-  autoRuleThreshold = parseFloat((document.getElementById('rule-cheap-threshold')||{value:'5'}).value) || 5;
-  autoRuleMinSoc    = parseFloat((document.getElementById('rule-min-soc')||{value:'15'}).value)         || 15;
-  autoRuleMaxSoc    = parseFloat((document.getElementById('rule-max-soc')||{value:'90'}).value)         || 90;
+  autoRuleThreshold = parseFloat((document.getElementById('rule-cheap-threshold')||{value:'5'}).value)   || 5;
+  autoRuleMinSoc    = parseFloat((document.getElementById('rule-min-soc')||{value:'15'}).value)           || 15;
+  autoRuleMaxSoc    = parseFloat((document.getElementById('rule-max-soc')||{value:'90'}).value)           || 90;
+  autoSellThreshold = parseFloat((document.getElementById('rule-sell-threshold')||{value:'20'}).value)   || 20;
+  autoSellMinSoc    = parseFloat((document.getElementById('rule-sell-min-soc')||{value:'20'}).value)      || 20;
+  autoSellStopSoc   = parseFloat((document.getElementById('rule-sell-min-stop')||{value:'20'}).value)     || 20;
+  var chargeKwRaw   = (document.getElementById('rule-charge-kw')||{value:''}).value;
+  var sellKwRaw     = (document.getElementById('rule-sell-kw')||{value:''}).value;
+  autoChargeKw      = chargeKwRaw !== '' ? (parseFloat(chargeKwRaw) || null) : null;
+  autoSellKw        = sellKwRaw   !== '' ? (parseFloat(sellKwRaw)   || null) : null;
 
   // Include systemId + nmi so the scheduled function (battery-auto.js) knows what to control
   var activeSystemId = sigenActiveSystemId || (sigenSystems.length ? sigenSystems[0].systemId : '');
@@ -4072,39 +4154,46 @@ async function saveRuleSettings() {
   var activeNmi      = activeSys.nmi || '';
 
   var payload = {
-    enabled:   autoRuleEnabled,
-    threshold: autoRuleThreshold,
-    minSoc:    autoRuleMinSoc,
-    maxSoc:    autoRuleMaxSoc,
-    systemId:  activeSystemId,
-    nmi:       activeNmi
+    enabled:       autoRuleEnabled,
+    threshold:     autoRuleThreshold,
+    minSoc:        autoRuleMinSoc,
+    maxSoc:        autoRuleMaxSoc,
+    sellThreshold: autoSellThreshold,
+    sellMinSoc:    autoSellMinSoc,
+    sellStopSoc:   autoSellStopSoc,
+    chargeKw:      autoChargeKw,
+    sellKw:        autoSellKw,
+    systemId:      activeSystemId,
+    nmi:           activeNmi
   };
-  // Save to Supabase (source of truth for scheduled function) + localStorage as cache
+  // Save to Supabase only (source of truth for scheduled function + all devices)
   sbSettingsSave('batt_rules', payload);
-  try {
-    localStorage.setItem('batt_rule_enabled',   autoRuleEnabled ? 'true' : 'false');
-    localStorage.setItem('batt_rule_threshold', autoRuleThreshold);
-    localStorage.setItem('batt_rule_min_soc',   autoRuleMinSoc);
-    localStorage.setItem('batt_rule_max_soc',   autoRuleMaxSoc);
-  } catch(e) {}
   updateRuleThresholdDisplay();
-  if (autoRuleEnabled) checkAutoRule();
+  checkAutoRule(); // always refresh price display when settings change
 }
 
 function renderRuleUI() {
-  var tEl = document.getElementById('rule-cheap-threshold');
-  var msEl = document.getElementById('rule-min-soc');
-  var mxEl = document.getElementById('rule-max-soc');
-  if (tEl) tEl.value  = autoRuleThreshold;
-  if (msEl) msEl.value = autoRuleMinSoc;
-  if (mxEl) mxEl.value = autoRuleMaxSoc;
+  var fields = {
+    'rule-cheap-threshold': autoRuleThreshold,
+    'rule-min-soc':         autoRuleMinSoc,
+    'rule-max-soc':         autoRuleMaxSoc,
+    'rule-sell-threshold':  autoSellThreshold,
+    'rule-sell-min-soc':    autoSellMinSoc,
+    'rule-sell-min-stop':   autoSellStopSoc,
+    'rule-charge-kw':       autoChargeKw,
+    'rule-sell-kw':         autoSellKw
+  };
+  Object.keys(fields).forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && fields[id] !== null && fields[id] !== undefined) el.value = fields[id];
+  });
   updateRuleToggleUI();
   updateRuleThresholdDisplay();
 }
 
 function updateRuleThresholdDisplay() {
   var el = document.getElementById('rule-threshold-display');
-  if (el) el.textContent = '≤ ' + autoRuleThreshold.toFixed(1) + ' c/kWh';
+  if (el) el.innerHTML = 'Buy ≤ ' + autoRuleThreshold.toFixed(1) + ' c/kWh<br>Sell ≥ ' + autoSellThreshold.toFixed(1) + ' c/kWh';
 }
 
 function toggleAutoRule() { requireBatteryPin(_toggleAutoRule); }
@@ -4112,8 +4201,7 @@ function _toggleAutoRule() {
   autoRuleEnabled = !autoRuleEnabled;
   // Persist toggle state online (include systemId + nmi so scheduled function has everything it needs)
   var _sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
-  sbSettingsSave('batt_rules', { enabled: autoRuleEnabled, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
-  try { localStorage.setItem('batt_rule_enabled', autoRuleEnabled ? 'true' : 'false'); } catch(e) {}
+  sbSettingsSave('batt_rules', { enabled: autoRuleEnabled, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
   updateRuleToggleUI();
   updateModeTiles(autoRuleEnabled ? 'auto' : null);
   if (autoRuleEnabled) {
@@ -4182,16 +4270,20 @@ async function loadAutoLog() {
 }
 
 async function checkAutoRule() {
-  if (!autoRuleEnabled) return;
+  // Always fetch + show the current price (regardless of whether auto rules is on).
+  // Only take actions (alert banner, status message) when rules are enabled.
 
   // Find NMI mapped to the active battery system
   var nmi = '';
   var activeSysId = sigenActiveSystemId || (sigenSystems.length ? sigenSystems[0].systemId : '');
   var sys = sigenSystems.find(function(s){ return s.systemId === activeSysId; });
   if (sys) nmi = sys.nmi || '';
-  // Fall back to first known NMI if the battery system has no NMI mapped yet
+  // Fall back to first known NMI if no NMI mapped yet
   if (!nmi && knownNMIs.length) nmi = knownNMIs[0];
-  if (!nmi) { setRuleStatus('No NMI found — map one in Settings → Battery', 'var(--amber)'); return; }
+  if (!nmi) {
+    if (autoRuleEnabled) setRuleStatus('No NMI found — map one in Settings → Battery', 'var(--amber)');
+    return;
+  }
 
   try {
     // Use GET + credentials, matching the pattern used across the rest of the dashboard
@@ -4203,15 +4295,26 @@ async function checkAutoRule() {
     var data = await res.json();
     if (!res.ok) throw new Error((data && (data.message || data.error)) || 'HTTP ' + res.status);
     if (!Array.isArray(data) || !data.length) throw new Error('no price data for NMI ' + nmi);
-    var row = data.find(function(r){ return r.NMI === nmi; }) || data[0];
+    var row         = data.find(function(r){ return r.NMI === nmi; }) || data[0];
     var importPrice = parseFloat(row.costsAllVarRate);
+    var exportPrice = parseFloat(row.earningsAllVarRate);
     if (isNaN(importPrice)) throw new Error('price field unavailable');
 
-    // Update price display
+    // Always update price displays
     var priceEl = document.getElementById('rule-current-price');
     if (priceEl) {
       priceEl.textContent = importPrice.toFixed(2) + ' c/kWh';
       priceEl.style.color = importPrice <= autoRuleThreshold ? '#10b981' : (importPrice > 30 ? 'var(--red)' : 'var(--text)');
+    }
+    var exportEl = document.getElementById('rule-current-export');
+    if (exportEl) {
+      if (!isNaN(exportPrice)) {
+        exportEl.textContent = exportPrice.toFixed(2) + ' c/kWh';
+        exportEl.style.color = exportPrice >= autoSellThreshold ? '#f59e0b' : 'var(--text)';
+      } else {
+        exportEl.textContent = '—';
+        exportEl.style.color = 'var(--text3)';
+      }
     }
     updateRuleThresholdDisplay();
 
@@ -4219,21 +4322,48 @@ async function checkAutoRule() {
     var lcEl = document.getElementById('rule-last-check');
     if (lcEl) lcEl.textContent = 'Last checked ' + ts;
 
-    var alertEl   = document.getElementById('cheap-power-alert');
-    var detailEl  = document.getElementById('cheap-power-detail');
-    var isCheap   = importPrice <= autoRuleThreshold;
-    var needsCharge = lastCheckedSoc !== null && lastCheckedSoc < autoRuleMaxSoc;
+    // Only show action status + alerts when auto rules is on
+    if (!autoRuleEnabled) {
+      setRuleStatus('—', 'var(--text3)');
+      document.getElementById('cheap-power-alert').style.display = 'none';
+      document.getElementById('sell-power-alert').style.display  = 'none';
+      return;
+    }
 
-    if (isCheap && needsCharge) {
-      setRuleStatus('⚡ Cheap — charge from grid recommended', '#10b981');
-      if (detailEl) detailEl.textContent = 'Price ' + importPrice.toFixed(2) + ' c/kWh ≤ threshold of ' + autoRuleThreshold + ' c/kWh · SOC ' + (lastCheckedSoc !== null ? lastCheckedSoc.toFixed(0)+'%' : '?') + ' (stop at ' + autoRuleMaxSoc + '%).';
-      if (alertEl) alertEl.style.display = 'block';
+    var soc         = lastCheckedSoc;
+    var isCheap     = importPrice <= autoRuleThreshold;
+    var needsCharge = soc !== null && soc < autoRuleMaxSoc;
+    var canSell     = !isNaN(exportPrice) && exportPrice >= autoSellThreshold && (soc === null || soc > autoSellMinSoc);
+    var sellTooLow  = soc !== null && soc <= autoSellStopSoc;
+
+    var cheapEl  = document.getElementById('cheap-power-alert');
+    var sellEl   = document.getElementById('sell-power-alert');
+    var detailEl = document.getElementById('cheap-power-detail');
+    var sellDtEl = document.getElementById('sell-power-detail');
+
+    if (canSell && !sellTooLow) {
+      // Sell rule takes priority over charge rule
+      setRuleStatus('💰 Selling to grid · ' + exportPrice.toFixed(1) + ' c/kWh', '#f59e0b');
+      if (sellDtEl) sellDtEl.textContent = 'Export ' + exportPrice.toFixed(2) + ' c/kWh ≥ sell threshold ' + autoSellThreshold + ' c/kWh · SOC ' + (soc !== null ? soc.toFixed(0)+'%' : '?') + ' (stop at ' + autoSellStopSoc + '%).';
+      if (sellEl)  sellEl.style.display  = 'block';
+      if (cheapEl) cheapEl.style.display = 'none';
+    } else if (isCheap && needsCharge) {
+      setRuleStatus('⚡ Grid charging · ' + importPrice.toFixed(1) + ' c/kWh', '#10b981');
+      if (detailEl) detailEl.textContent = 'Import ' + importPrice.toFixed(2) + ' c/kWh ≤ buy threshold ' + autoRuleThreshold + ' c/kWh · SOC ' + (soc !== null ? soc.toFixed(0)+'%' : '?') + ' (stop at ' + autoRuleMaxSoc + '%).';
+      if (cheapEl) cheapEl.style.display = 'block';
+      if (sellEl)  sellEl.style.display  = 'none';
     } else if (isCheap && !needsCharge) {
-      setRuleStatus('✓ Price cheap but battery is full (' + (lastCheckedSoc !== null ? lastCheckedSoc.toFixed(0) : '?') + '%)', '#10b981');
-      if (alertEl) alertEl.style.display = 'none';
+      setRuleStatus('✓ Cheap but battery full (' + (soc !== null ? soc.toFixed(0) : '?') + '%)', '#10b981');
+      if (cheapEl) cheapEl.style.display = 'none';
+      if (sellEl)  sellEl.style.display  = 'none';
+    } else if (sellTooLow) {
+      setRuleStatus('✓ SOC low — stopped selling (' + (soc !== null ? soc.toFixed(0) : '?') + '%)', 'var(--amber)');
+      if (cheapEl) cheapEl.style.display = 'none';
+      if (sellEl)  sellEl.style.display  = 'none';
     } else {
-      setRuleStatus('✓ Self-consumption mode · ' + importPrice.toFixed(1) + ' c/kWh', '#10b981');
-      if (alertEl) alertEl.style.display = 'none';
+      setRuleStatus('✓ Self-consumption · import ' + importPrice.toFixed(1) + ' c/kWh', 'var(--text2)');
+      if (cheapEl) cheapEl.style.display = 'none';
+      if (sellEl)  sellEl.style.display  = 'none';
     }
 
   } catch(e) {
