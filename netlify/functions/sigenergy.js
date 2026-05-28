@@ -120,7 +120,7 @@ exports.handler = async (event) => {
 
       // ── Inventory ────────────────────────────────────────────────────────
       case 'systems':
-        // GET /openapi/system  — list all systems on this account
+        // GET /openapi/system  — list all onboarded systems on this account
         result = await sigenGet(token, '/openapi/system');
         break;
 
@@ -174,11 +174,23 @@ exports.handler = async (event) => {
         break;
       }
 
+      case 'onboard':
+        // POST /openapi/board/onboard — pair a system with this API key
+        if (!systemId) throw new Error('systemId required for action=onboard');
+        result = await sigenPost(token, '/openapi/board/onboard', [systemId]);
+        break;
+
+      case 'offboard':
+        // POST /openapi/board/offboard — unpair a system from this API key
+        if (!systemId) throw new Error('systemId required for action=offboard');
+        result = await sigenPost(token, '/openapi/board/offboard', [systemId]);
+        break;
+
       default:
         return {
           statusCode: 400,
           headers:    CORS,
-          body:       JSON.stringify({ error: `Unknown action: "${action}". Valid: systems, devices, summary, energyFlow, deviceRealtime, setMode` })
+          body:       JSON.stringify({ error: `Unknown action: "${action}". Valid: systems, devices, summary, energyFlow, deviceRealtime, setMode, onboard, offboard` })
         };
     }
 
