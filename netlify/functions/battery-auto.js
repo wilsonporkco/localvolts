@@ -79,7 +79,7 @@ async function sbSet(key, value) {
 // These call sigenergy.js inline (shared code pattern) rather than over HTTP
 // to avoid needing to know the site URL. We import the same logic directly.
 
-const BASE      = process.env.SIGEN_BASE_URL  || 'https://api-au.sigencloud.com';
+const BASE      = process.env.SIGEN_BASE_URL  || 'https://api-aus.sigencloud.com';
 const MQTT_HOST = process.env.SIGEN_MQTT_HOST || 'mqtt-aus.sigencloud.com';
 const MQTT_PORT = parseInt(process.env.SIGEN_MQTT_PORT || '1883', 10);
 
