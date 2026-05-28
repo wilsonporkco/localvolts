@@ -4118,6 +4118,11 @@ async function loadRuleSettings() {
       autoSellStopSoc   = parseFloat(remote.sellStopSoc   ?? 20);
       autoChargeKw      = remote.chargeKw != null ? parseFloat(remote.chargeKw) : null;
       autoSellKw        = remote.sellKw   != null ? parseFloat(remote.sellKw)   : null;
+      // Sync NMI from batt_rules back into sigenSystems so System Info panel shows it
+      if (remote.systemId && remote.nmi) {
+        var _sysRef = sigenSystems.find(function(s){ return s.systemId === remote.systemId; });
+        if (_sysRef) _sysRef.nmi = remote.nmi;
+      }
     } else {
       // No Supabase data — use defaults
       autoRuleEnabled   = false;
@@ -4274,10 +4279,17 @@ async function checkAutoRule() {
   // Only take actions (alert banner, status message) when rules are enabled.
 
   // Find NMI mapped to the active battery system
+  // Prefer batt_rules.nmi from Supabase (most reliable), fall back to sigenSystems
   var nmi = '';
-  var activeSysId = sigenActiveSystemId || (sigenSystems.length ? sigenSystems[0].systemId : '');
-  var sys = sigenSystems.find(function(s){ return s.systemId === activeSysId; });
-  if (sys) nmi = sys.nmi || '';
+  try {
+    var _br = await sbSettingsLoad('batt_rules');
+    if (_br && _br.nmi) nmi = String(_br.nmi);
+  } catch(e) {}
+  if (!nmi) {
+    var activeSysId = sigenActiveSystemId || (sigenSystems.length ? sigenSystems[0].systemId : '');
+    var sys = sigenSystems.find(function(s){ return s.systemId === activeSysId; });
+    if (sys) nmi = sys.nmi || '';
+  }
   // Fall back to first known NMI if no NMI mapped yet
   if (!nmi && knownNMIs.length) nmi = knownNMIs[0];
   if (!nmi) {
@@ -4292,7 +4304,11 @@ async function checkAutoRule() {
     if (acc.apikey)  p._apikey  = acc.apikey;
     if (acc.partner) p._partner = acc.partner;
     var res  = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
-    var data = await res.json();
+    var _rawText = await res.text();
+    var data;
+    try { data = JSON.parse(_rawText); } catch(e) {
+      throw new Error('Pricing temporarily unavailable (HTTP ' + res.status + ') — will retry automatically');
+    }
     if (!res.ok) throw new Error((data && (data.message || data.error)) || 'HTTP ' + res.status);
     if (!Array.isArray(data) || !data.length) throw new Error('no price data for NMI ' + nmi);
     var row         = data.find(function(r){ return r.NMI === nmi; }) || data[0];
