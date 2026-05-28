@@ -198,18 +198,18 @@ function sendMqttCommand(token, commandPayload) {
 }
 
 // ── LocalVolts price fetch ────────────────────────────────────────────────────
-async function getLvPrice(nmi) {
+// Returns { importPrice, exportPrice } both in c/kWh
+async function getLvPrices(nmi) {
   if (!LV_PROXY_URL) throw new Error('LV_PROXY_URL env var not set');
-  const res  = await fetch(LV_PROXY_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ NMI: nmi })
-  });
+  const res  = await fetch(`${LV_PROXY_URL}?NMI=${encodeURIComponent(nmi)}`);
   if (!res.ok) throw new Error(`LocalVolts proxy returned ${res.status}`);
   const data = await res.json();
   const row  = (Array.isArray(data) ? data : []).find(r => r.NMI === nmi) || data[0];
   if (!row) throw new Error('No price data returned for NMI ' + nmi);
-  return parseFloat(row.costsAllVarRate);   // c/kWh
+  return {
+    importPrice: parseFloat(row.costsAllVarRate),
+    exportPrice: parseFloat(row.earningsAllVarRate)
+  };
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -226,9 +226,14 @@ exports.handler = async () => {
       return { statusCode: 200 };
     }
 
-    const threshold = parseFloat(rules.threshold ?? 5);   // c/kWh
-    const minSoc    = parseFloat(rules.minSoc    ?? 15);  // %
-    const maxSoc    = parseFloat(rules.maxSoc    ?? 90);  // %
+    const threshold     = parseFloat(rules.threshold     ?? 5);    // c/kWh buy threshold
+    const minSoc        = parseFloat(rules.minSoc        ?? 15);   // % discharge floor
+    const maxSoc        = parseFloat(rules.maxSoc        ?? 90);   // % stop charging
+    const sellThreshold = parseFloat(rules.sellThreshold ?? 20);   // c/kWh sell threshold
+    const sellMinSoc    = parseFloat(rules.sellMinSoc    ?? 20);   // % min SOC before selling
+    const sellStopSoc   = parseFloat(rules.sellStopSoc   ?? 20);   // % stop selling below this
+    const chargeKw      = rules.chargeKw != null ? parseFloat(rules.chargeKw) : null;
+    const sellKw        = rules.sellKw   != null ? parseFloat(rules.sellKw)   : null;
 
     // 2 ── Identify system + NMI
     // batt_rules may contain systemId and nmi saved from the UI
@@ -266,48 +271,68 @@ exports.handler = async () => {
       return { statusCode: 200 };
     }
 
-    // 4 ── Get current LocalVolts price
-    const importPrice = await getLvPrice(nmi);
-    logEntry.price     = importPrice;
-    logEntry.threshold = threshold;
+    // 4 ── Get current LocalVolts prices
+    const { importPrice, exportPrice } = await getLvPrices(nmi);
+    logEntry.price        = importPrice;
+    logEntry.exportPrice  = exportPrice;
+    logEntry.threshold    = threshold;
+    logEntry.sellThreshold = sellThreshold;
 
     const isCheap    = importPrice <= threshold;
     const socTooHigh = soc >= maxSoc;
-    const socTooLow  = soc <= minSoc;  // never discharge below floor
+    const socTooLow  = soc <= minSoc;
+    const canSell    = !isNaN(exportPrice) && exportPrice >= sellThreshold && soc > sellMinSoc;
+    const sellFloor  = soc <= sellStopSoc;
 
     // 5 ── Decide action
-    // Load previous action from log so we know if we were already grid-charging
-    const prevLog    = await sbGet('batt_auto_log') || {};
+    // Load previous action from log so we know the previous state
+    const prevLog     = await sbGet('batt_auto_log') || {};
     const wasCharging = prevLog.action === 'grid_charge';
+    const wasSelling  = prevLog.action === 'feed_in';
 
-    if (isCheap && !socTooHigh) {
+    if (canSell && !sellFloor) {
+      // ── FEED-IN / SELL ────────────────────────────────────────────────────
+      // Sell rule has priority — export price is above threshold and battery has enough charge
+      logEntry.action = 'feed_in';
+      logEntry.reason = `Export ${exportPrice.toFixed(2)} c/kWh ≥ sell threshold ${sellThreshold} c/kWh, SOC ${soc.toFixed(1)}% > floor ${sellMinSoc}%`;
+
+      const modeResult = await sigenPost(
+        `/openapi/systems/${systemId}/ems/energyStorageOperationMode`,
+        { systemId, energyStorageOperationMode: 1 }  // 1 = Full Feed-in
+      );
+      logEntry.cmdResult = modeResult;
+
+    } else if (isCheap && !socTooHigh && !socTooLow) {
       // ── GRID CHARGE ──────────────────────────────────────────────────────
       logEntry.action = 'grid_charge';
-      logEntry.reason = `Price ${importPrice.toFixed(2)} c/kWh ≤ threshold ${threshold} c/kWh, SOC ${soc.toFixed(1)}% < max ${maxSoc}%`;
+      logEntry.reason = `Import ${importPrice.toFixed(2)} c/kWh ≤ threshold ${threshold} c/kWh, SOC ${soc.toFixed(1)}% < max ${maxSoc}%`;
 
-      const token = await getToken();
-      const cmdResult = await sendMqttCommand(token, {
+      const token  = await getToken();
+      const cmd    = {
         systemId,
-        activeMode:       'charge',
-        startTime:        Math.floor(Date.now() / 1000),
-        duration:         10,          // 10 minutes — function runs every 5 min, keep window small
+        activeMode:        'charge',
+        startTime:         Math.floor(Date.now() / 1000),
+        duration:          10,
         chargePriorityType: 'GRID'
-      });
+      };
+      if (chargeKw) cmd.chargingPower = chargeKw;
+      const cmdResult = await sendMqttCommand(token, cmd);
       logEntry.cmdResult = cmdResult;
 
-    } else if (wasCharging && (!isCheap || socTooHigh)) {
-      // ── STOP GRID CHARGE — return to self-consumption ────────────────────
+    } else if ((wasCharging || wasSelling) && (!isCheap || socTooHigh) && (!canSell || sellFloor)) {
+      // ── RETURN TO SELF-CONSUMPTION ───────────────────────────────────────
       logEntry.action = 'self_consume';
       if (socTooHigh) {
         logEntry.reason = `SOC ${soc.toFixed(1)}% reached max ${maxSoc}% — stopping grid charge`;
+      } else if (sellFloor) {
+        logEntry.reason = `SOC ${soc.toFixed(1)}% dropped to sell floor ${sellStopSoc}% — stopping feed-in`;
       } else {
-        logEntry.reason = `Price ${importPrice.toFixed(2)} c/kWh > threshold ${threshold} c/kWh — stopping grid charge`;
+        logEntry.reason = `Conditions no longer met — returning to self-consumption`;
       }
 
-      // Switch EMS mode back to Max Self-Consumption (mode 0)
       const modeResult = await sigenPost(
         `/openapi/systems/${systemId}/ems/energyStorageOperationMode`,
-        { systemId, energyStorageOperationMode: 0 }
+        { systemId, energyStorageOperationMode: 0 }  // 0 = Max Self-Consumption
       );
       logEntry.cmdResult = modeResult;
 
