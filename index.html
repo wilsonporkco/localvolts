@@ -3976,20 +3976,25 @@ async function loadAutoLog() {
 async function checkAutoRule() {
   if (!autoRuleEnabled) return;
 
-  // Find NMI for active battery system
+  // Find NMI mapped to the active battery system
   var nmi = '';
-  var sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; });
+  var activeSysId = sigenActiveSystemId || (sigenSystems.length ? sigenSystems[0].systemId : '');
+  var sys = sigenSystems.find(function(s){ return s.systemId === activeSysId; });
   if (sys) nmi = sys.nmi || '';
-  if (!nmi) { setRuleStatus('No NMI mapped — set in Settings', 'var(--amber)'); return; }
+  // Fall back to first known NMI if the battery system has no NMI mapped yet
+  if (!nmi && knownNMIs.length) nmi = knownNMIs[0];
+  if (!nmi) { setRuleStatus('No NMI found — map one in Settings → Battery', 'var(--amber)'); return; }
 
   try {
-    var res = await fetch(PROXY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ NMI: nmi })
-    });
+    // Use GET + credentials, matching the pattern used across the rest of the dashboard
+    var acc = lvAccounts[lvActiveIdx] || lvAccounts[0] || {};
+    var p   = { NMI: nmi };
+    if (acc.apikey)  p._apikey  = acc.apikey;
+    if (acc.partner) p._partner = acc.partner;
+    var res  = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
     var data = await res.json();
-    if (!Array.isArray(data) || !data.length) throw new Error('no price data');
+    if (!res.ok) throw new Error((data && (data.message || data.error)) || 'HTTP ' + res.status);
+    if (!Array.isArray(data) || !data.length) throw new Error('no price data for NMI ' + nmi);
     var row = data.find(function(r){ return r.NMI === nmi; }) || data[0];
     var importPrice = parseFloat(row.costsAllVarRate);
     if (isNaN(importPrice)) throw new Error('price field unavailable');
