@@ -833,6 +833,73 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             </div>
           </div>
 
+          <!-- Auto Rules card -->
+          <div class="chart-card" style="margin-top:14px;" id="battery-rules-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div>
+                <div class="chart-title" style="margin-bottom:2px;">Auto Rules</div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);">Monitors LocalVolts price every 5 min · always self-consumption</div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="toggleAutoRule()">
+                <span style="font-family:var(--mono);font-size:11px;color:var(--text3);" id="auto-rule-label">OFF</span>
+                <div id="auto-rule-toggle" style="width:36px;height:20px;border-radius:10px;background:#d1d5db;position:relative;transition:background 0.2s;flex-shrink:0;">
+                  <div id="auto-rule-knob" style="position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:left 0.2s;"></div>
+                </div>
+              </label>
+            </div>
+
+            <!-- Threshold settings -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;">
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Grid charge when price ≤</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-cheap-threshold" value="5" min="-100" max="100" step="1" style="width:68px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">c/kWh</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Min SOC floor</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-min-soc" value="15" min="0" max="100" step="5" style="width:60px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">%</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Stop grid charge at</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" id="rule-max-soc" value="90" min="0" max="100" step="5" style="width:60px;padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-family:var(--mono);font-size:13px;background:#fff;color:var(--text);outline:none;" onchange="saveRuleSettings()">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--text3);">%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Status row -->
+            <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:11px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+              <div>
+                <div style="color:var(--text3);margin-bottom:2px;">Import price</div>
+                <div id="rule-current-price" style="font-weight:600;font-size:13px;color:var(--text);">—</div>
+              </div>
+              <div>
+                <div style="color:var(--text3);margin-bottom:2px;">Threshold</div>
+                <div id="rule-threshold-display" style="font-size:13px;color:var(--text);">—</div>
+              </div>
+              <div>
+                <div style="color:var(--text3);margin-bottom:2px;">Status</div>
+                <div id="rule-action-status" style="font-weight:600;font-size:12px;">—</div>
+              </div>
+            </div>
+
+            <!-- Cheap power alert banner -->
+            <div id="cheap-power-alert" style="display:none;background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #6ee7b7;border-radius:10px;padding:13px 14px;margin-bottom:10px;">
+              <div style="font-weight:600;color:#065f46;margin-bottom:3px;">⚡ Cheap power — good time to charge from grid</div>
+              <div style="font-size:12px;color:#047857;margin-bottom:8px;" id="cheap-power-detail">Price is below your threshold right now.</div>
+              <div style="font-size:11px;color:#6b7280;">To force grid charge: open Sigenergy app → EMS settings → add a "charge from grid" window for the next 30–60 min. Full API automation via MQTT can be added once you obtain Sigenergy MQTT broker credentials.</div>
+            </div>
+
+            <!-- Last checked -->
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);" id="rule-last-check"></div>
+          </div>
+
         </div><!-- /battery-content -->
       </div>
     </div>
@@ -1645,7 +1712,7 @@ function switchPanel(name, el) {
     });
   }
   if (name==='comparison') { loadComparison(); }
-  if (name==='battery') { loadBattery(); }
+  if (name==='battery') { loadRuleSettings(); loadBattery(); }
   if (name==='settings') { renderSigenSettings(); }
 }
 
@@ -3592,7 +3659,7 @@ async function loadBattery() {
     }
 
     // ── SOC gauge ────────────────────────────────────────────────────────
-    if (soc !== null) updateSocGauge(soc);
+    if (soc !== null) { updateSocGauge(soc); lastCheckedSoc = soc; }
 
     // ── Energy flow ──────────────────────────────────────────────────────
     function setFlow(id, val, dirId, pos, neg) {
@@ -3752,6 +3819,167 @@ async function sigenOffboard() {
   } catch(err) {
     if(statusEl){statusEl.textContent='✗ '+err.message;statusEl.style.color='var(--red)';}
   }
+}
+
+// ── Auto Rules ────────────────────────────────────────────────────────────────
+var autoRuleEnabled   = false;
+var autoRuleThreshold = 5;    // c/kWh — grid charge when price ≤ this
+var autoRuleMinSoc    = 15;   // % — keep as floor / don't discharge below
+var autoRuleMaxSoc    = 90;   // % — stop grid charging above this
+var autoRuleTimer     = null;
+var lastCheckedSoc    = null; // updated by loadBattery()
+
+async function loadRuleSettings() {
+  // Load from Supabase first, fall back to localStorage
+  try {
+    var remote = await sbSettingsLoad('batt_rules');
+    if (remote && typeof remote === 'object') {
+      autoRuleEnabled   = !!remote.enabled;
+      autoRuleThreshold = parseFloat(remote.threshold ?? 5);
+      autoRuleMinSoc    = parseFloat(remote.minSoc    ?? 15);
+      autoRuleMaxSoc    = parseFloat(remote.maxSoc    ?? 90);
+    } else {
+      // fall back to localStorage
+      autoRuleEnabled   = localStorage.getItem('batt_rule_enabled') === 'true';
+      autoRuleThreshold = parseFloat(localStorage.getItem('batt_rule_threshold') || '5');
+      autoRuleMinSoc    = parseFloat(localStorage.getItem('batt_rule_min_soc')   || '15');
+      autoRuleMaxSoc    = parseFloat(localStorage.getItem('batt_rule_max_soc')   || '90');
+    }
+  } catch(e) {}
+  renderRuleUI();
+  if (autoRuleEnabled) startAutoRuleTimer();
+}
+
+async function saveRuleSettings() {
+  autoRuleThreshold = parseFloat((document.getElementById('rule-cheap-threshold')||{value:'5'}).value) || 5;
+  autoRuleMinSoc    = parseFloat((document.getElementById('rule-min-soc')||{value:'15'}).value)         || 15;
+  autoRuleMaxSoc    = parseFloat((document.getElementById('rule-max-soc')||{value:'90'}).value)         || 90;
+  var payload = { enabled: autoRuleEnabled, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc };
+  // Save to Supabase (source of truth) + localStorage as cache
+  sbSettingsSave('batt_rules', payload);
+  try {
+    localStorage.setItem('batt_rule_enabled',   autoRuleEnabled ? 'true' : 'false');
+    localStorage.setItem('batt_rule_threshold', autoRuleThreshold);
+    localStorage.setItem('batt_rule_min_soc',   autoRuleMinSoc);
+    localStorage.setItem('batt_rule_max_soc',   autoRuleMaxSoc);
+  } catch(e) {}
+  updateRuleThresholdDisplay();
+  if (autoRuleEnabled) checkAutoRule();
+}
+
+function renderRuleUI() {
+  var tEl = document.getElementById('rule-cheap-threshold');
+  var msEl = document.getElementById('rule-min-soc');
+  var mxEl = document.getElementById('rule-max-soc');
+  if (tEl) tEl.value  = autoRuleThreshold;
+  if (msEl) msEl.value = autoRuleMinSoc;
+  if (mxEl) mxEl.value = autoRuleMaxSoc;
+  updateRuleToggleUI();
+  updateRuleThresholdDisplay();
+}
+
+function updateRuleThresholdDisplay() {
+  var el = document.getElementById('rule-threshold-display');
+  if (el) el.textContent = '≤ ' + autoRuleThreshold.toFixed(1) + ' c/kWh';
+}
+
+function toggleAutoRule() {
+  autoRuleEnabled = !autoRuleEnabled;
+  // Persist toggle state online
+  sbSettingsSave('batt_rules', { enabled: autoRuleEnabled, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc });
+  try { localStorage.setItem('batt_rule_enabled', autoRuleEnabled ? 'true' : 'false'); } catch(e) {}
+  updateRuleToggleUI();
+  if (autoRuleEnabled) {
+    checkAutoRule();
+    startAutoRuleTimer();
+  } else {
+    stopAutoRuleTimer();
+    setRuleStatus('—', 'var(--text3)');
+    var alertEl = document.getElementById('cheap-power-alert');
+    if (alertEl) alertEl.style.display = 'none';
+    var lc = document.getElementById('rule-last-check');
+    if (lc) lc.textContent = '';
+  }
+}
+
+function updateRuleToggleUI() {
+  var lbl    = document.getElementById('auto-rule-label');
+  var toggle = document.getElementById('auto-rule-toggle');
+  var knob   = document.getElementById('auto-rule-knob');
+  if (lbl)    { lbl.textContent = autoRuleEnabled ? 'ON' : 'OFF'; lbl.style.color = autoRuleEnabled ? 'var(--green)' : 'var(--text3)'; }
+  if (toggle) toggle.style.background = autoRuleEnabled ? '#10b981' : '#d1d5db';
+  if (knob)   knob.style.left = autoRuleEnabled ? '19px' : '3px';
+}
+
+function startAutoRuleTimer() {
+  stopAutoRuleTimer();
+  autoRuleTimer = setInterval(checkAutoRule, 5 * 60 * 1000); // every 5 min
+}
+
+function stopAutoRuleTimer() {
+  if (autoRuleTimer) { clearInterval(autoRuleTimer); autoRuleTimer = null; }
+}
+
+async function checkAutoRule() {
+  if (!autoRuleEnabled) return;
+
+  // Find NMI for active battery system
+  var nmi = '';
+  var sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; });
+  if (sys) nmi = sys.nmi || '';
+  if (!nmi) { setRuleStatus('No NMI mapped — set in Settings', 'var(--amber)'); return; }
+
+  try {
+    var res = await fetch(PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ NMI: nmi })
+    });
+    var data = await res.json();
+    if (!Array.isArray(data) || !data.length) throw new Error('no price data');
+    var row = data.find(function(r){ return r.NMI === nmi; }) || data[0];
+    var importPrice = parseFloat(row.costsAllVarRate);
+    if (isNaN(importPrice)) throw new Error('price field unavailable');
+
+    // Update price display
+    var priceEl = document.getElementById('rule-current-price');
+    if (priceEl) {
+      priceEl.textContent = importPrice.toFixed(2) + ' c/kWh';
+      priceEl.style.color = importPrice <= autoRuleThreshold ? '#10b981' : (importPrice > 30 ? 'var(--red)' : 'var(--text)');
+    }
+    updateRuleThresholdDisplay();
+
+    var ts = new Date().toLocaleTimeString('en-AU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    var lcEl = document.getElementById('rule-last-check');
+    if (lcEl) lcEl.textContent = 'Last checked ' + ts;
+
+    var alertEl   = document.getElementById('cheap-power-alert');
+    var detailEl  = document.getElementById('cheap-power-detail');
+    var isCheap   = importPrice <= autoRuleThreshold;
+    var needsCharge = lastCheckedSoc !== null && lastCheckedSoc < autoRuleMaxSoc;
+
+    if (isCheap && needsCharge) {
+      setRuleStatus('⚡ Cheap — charge from grid recommended', '#10b981');
+      if (detailEl) detailEl.textContent = 'Price ' + importPrice.toFixed(2) + ' c/kWh ≤ threshold of ' + autoRuleThreshold + ' c/kWh · SOC ' + (lastCheckedSoc !== null ? lastCheckedSoc.toFixed(0)+'%' : '?') + ' (stop at ' + autoRuleMaxSoc + '%).';
+      if (alertEl) alertEl.style.display = 'block';
+    } else if (isCheap && !needsCharge) {
+      setRuleStatus('✓ Price cheap but battery is full (' + (lastCheckedSoc !== null ? lastCheckedSoc.toFixed(0) : '?') + '%)', '#10b981');
+      if (alertEl) alertEl.style.display = 'none';
+    } else {
+      setRuleStatus('✓ Self-consumption mode · ' + importPrice.toFixed(1) + ' c/kWh', '#10b981');
+      if (alertEl) alertEl.style.display = 'none';
+    }
+
+  } catch(e) {
+    setRuleStatus('Error: ' + e.message, 'var(--red)');
+    var lcEl2 = document.getElementById('rule-last-check');
+    if (lcEl2) lcEl2.textContent = 'Check failed at ' + new Date().toLocaleTimeString('en-AU', {hour:'2-digit', minute:'2-digit'});
+  }
+}
+
+function setRuleStatus(msg, color) {
+  var el = document.getElementById('rule-action-status');
+  if (el) { el.textContent = msg; el.style.color = color || 'var(--text)'; }
 }
 
 // ── Boot: load Sigenergy settings from Supabase ───────────────────────────────
