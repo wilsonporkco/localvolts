@@ -3442,10 +3442,27 @@ async function discoverSigenSystems() {
       return;
     }
 
-    // Merge discovered systems — keep existing NMI mappings
+    // Show raw response in debug output so we can inspect field names
+    if (outEl) {
+      outEl.style.display = 'block';
+      outEl.style.color = 'var(--text2)';
+      outEl.textContent = 'Raw API response:\n' + JSON.stringify(list.slice(0,2), null, 2);
+    }
+
+    // Merge discovered systems — try every plausible ID field name
     list.forEach(function(sys) {
-      var id   = sys.systemId || sys.id || sys.sysId || '';
-      var name = sys.systemName || sys.name || sys.sysName || id;
+      // Try every key that looks like an identifier
+      var id = sys.systemId || sys.sysId || sys.id || sys.plantId || sys.stationId
+            || sys.system_id || sys.plant_id || sys.station_id || '';
+      // If still empty, look for any key containing 'id' (case-insensitive)
+      if (!id) {
+        Object.keys(sys).forEach(function(k) {
+          if (!id && /id/i.test(k) && typeof sys[k] === 'string' && sys[k].length > 2) id = sys[k];
+        });
+      }
+      var name = sys.systemName || sys.name || sys.sysName || sys.plantName
+              || sys.stationName || sys.system_name || sys.plant_name || id;
+      if (!id) { console.warn('Sigenergy: could not find system ID in', sys); return; }
       var existing = sigenSystems.find(function(s){ return s.systemId===id; });
       if (!existing) {
         sigenSystems.push({ systemId: id, systemName: name, nmi: '' });
