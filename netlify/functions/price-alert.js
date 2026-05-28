@@ -1,15 +1,18 @@
 /**
  * price-alert.js — Netlify scheduled function
- * Runs every 30 minutes. Queries Supabase lv_intervals directly (same source
+ * Runs every 5 minutes. Queries Supabase lv_intervals directly (same source
  * as the dashboard 24-hour forecast chart) for each configured NMI and sends
  * email via SMTP2GO when forecast cost < threshold.
+ *
+ * Also automatically includes the battery NMI from batt_rules (lv_settings)
+ * if it is not already in the alerts config.
  *
  * Required env vars:
  *   SMTP2GO_API_KEY       — your SMTP2GO API key
  *   ALERT_FROM_EMAIL      — verified sender, e.g. alerts@wilsonporkco.com.au
  *   SUPABASE_SERVICE_KEY  — from Supabase → Settings → API → service_role key
  *
- * Schedule: every 30 minutes (configured in netlify.toml)
+ * Schedule: every 5 minutes (configured in netlify.toml)
  */
 
 const SUPABASE_URL = 'https://zmljvelkbhzalrniebhz.supabase.co';
@@ -19,6 +22,7 @@ function sbHeaders() {
   return { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Accept': 'application/json' };
 }
 
+// Read from lv_config table (used by alerts)
 async function sbGet(key) {
   var res  = await fetch(SUPABASE_URL + '/rest/v1/lv_config?key=eq.' + key + '&select=value', { headers: sbHeaders() });
   var rows = await res.json();
@@ -32,6 +36,16 @@ async function sbSet(key, value) {
     headers: Object.assign({ 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' }, sbHeaders()),
     body:    JSON.stringify({ key: key, value: value })
   });
+}
+
+// Read from lv_settings table (used by battery-auto and dashboard)
+async function sbGetSettings(key) {
+  var res  = await fetch(SUPABASE_URL + '/rest/v1/lv_settings?key=eq.' + encodeURIComponent(key) + '&select=value&limit=1', { headers: sbHeaders() });
+  if (!res.ok) return null;
+  var rows = await res.json();
+  if (!Array.isArray(rows) || !rows.length) return null;
+  var raw = rows[0].value;
+  try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return raw; }
 }
 
 // Query lv_intervals for a given NMI over the next 24 hours
@@ -177,7 +191,35 @@ exports.handler = async function (event, context) {
   if (!process.env.SUPABASE_SERVICE_KEY) { console.error('[price-alert] SUPABASE_SERVICE_KEY not set'); return { statusCode: 500, body: 'SUPABASE_SERVICE_KEY not configured' }; }
 
   var config = await sbGet('alerts');
-  if (!config || !Array.isArray(config.alerts) || !config.alerts.length) {
+  if (!config || !Array.isArray(config.alerts)) config = { alerts: [] };
+
+  // ── Auto-add battery NMI ─────────────────────────────────────────────────
+  // If batt_rules has an NMI configured, automatically include it in price
+  // checks even if it hasn't been manually added to the alerts config.
+  try {
+    var battRules = await sbGetSettings('batt_rules');
+    if (battRules && battRules.nmi) {
+      var battNmi = String(battRules.nmi);
+      var alreadyInAlerts = config.alerts.some(function(a) { return a.nmi === battNmi; });
+      if (!alreadyInAlerts) {
+        // Use emails from the first configured alert, and the battery threshold
+        var fallbackEmails = config.alerts.length ? config.alerts[0].emails : [];
+        var battThreshold  = typeof battRules.threshold === 'number' ? battRules.threshold : 10;
+        config.alerts.push({
+          nmi:       battNmi,
+          nmiName:   'Battery NMI (' + battNmi + ')',
+          emails:    fallbackEmails,
+          threshold: battThreshold,
+          _autoBatt: true   // marker so we can identify it in logs
+        });
+        console.log('[price-alert] Auto-added battery NMI', battNmi, 'with threshold', battThreshold + 'c');
+      }
+    }
+  } catch (e) {
+    console.warn('[price-alert] Could not load batt_rules:', e.message);
+  }
+
+  if (!config.alerts.length) {
     console.log('[price-alert] No alerts configured');
     return { statusCode: 200, body: 'No alerts configured' };
   }
