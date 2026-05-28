@@ -3553,7 +3553,7 @@ async function loadBattery() {
   document.getElementById('battery-error').style.display   = 'none';
 
   try {
-    var summary = await sigenCall('summary', { systemId: systemId });
+    var summary = await sigenCall('energyFlow', { systemId: systemId });
 
     // ── Parse key fields (field names vary by firmware version) ──────────
     function pick(obj) {
@@ -3564,12 +3564,15 @@ async function loadBattery() {
       return null;
     }
 
+    // energyFlow fields per API docs: pvPower, gridPower, batteryPower, batterySoc, loadPower
+    // (gridPower: positive = selling/export, negative = buying/import)
     var soc      = pick(summary, 'batterySoc', 'soc', 'battSoc', 'BatterySoc');
     var battkW   = pick(summary, 'batteryPower', 'battPower', 'BatteryPower', 'storagePower');
     var gridkW   = pick(summary, 'gridPower', 'GridPower', 'gridActivePower', 'pGridPower');
     var pvkW     = pick(summary, 'pvPower', 'PvPower', 'solarPower', 'pPvPower');
     var loadkW   = pick(summary, 'loadPower', 'LoadPower', 'homePower', 'consumptionPower');
     var opMode   = pick(summary, 'energyStorageOperationMode', 'operationMode', 'workMode');
+    // Note: energyFlow does not include operating mode — mode control is still available below
 
     var MODES = {
       0: 'Maximum Self-Consumption',
@@ -3699,7 +3702,15 @@ async function sigenOnboard() {
     var json = await res.json();
     if (json.error) throw new Error(json.error);
     if (json.code !== 0) throw new Error('API ('+json.code+'): '+(json.msg||'failed'));
-    if(statusEl){statusEl.textContent='✓ Onboarded — click Discover systems to load it.';statusEl.style.color='var(--green)';}
+    // The API returns code 0 even for per-system failures — check data[0].result
+    var sysResult = json.data && Array.isArray(json.data) && json.data[0];
+    if (sysResult && sysResult.result === false) {
+      var failCode = (sysResult.codeList||[]).join(',') || '?';
+      throw new Error('Onboard rejected for system '+systemId+' (code '+failCode+'). Check the System ID is correct and the system owner has granted API access in the Sigenergy app.');
+    }
+    var outEl2 = document.getElementById('sigen-test-out');
+    if (outEl2) { outEl2.style.display='block'; outEl2.textContent='Onboard response:\n'+JSON.stringify(json, null, 2); }
+    if(statusEl){statusEl.textContent='✓ Onboarded successfully! If battery data still shows errors, try refreshing on the Battery panel.';statusEl.style.color='var(--green)';}
     // Auto-add to systems list
     var existing = sigenSystems.find(function(s){return s.systemId===systemId;});
     if (!existing) {
