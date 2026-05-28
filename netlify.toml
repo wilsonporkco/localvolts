@@ -1,10 +1,8 @@
 [build]
   functions = "netlify/functions"
 
-[[functions]]
-  name     = "price-alert"
+[functions."price-alert"]
   schedule = "*/30 * * * *"
 
-[[functions]]
-  name     = "battery-auto"
+[functions."battery-auto"]
   schedule = "*/5 * * * *"
