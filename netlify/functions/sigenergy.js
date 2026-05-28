@@ -9,7 +9,8 @@
 //   • POST body params:              appKey         /  appSecret
 //
 // Region default: ANZ (Australia & New Zealand) — https://api-aus.sigencloud.com
-// Override via env var: SIGEN_BASE_URL
+// Override via env var:  SIGEN_BASE_URL
+// MQTT broker override:  SIGEN_MQTT_HOST  (default: mqtt-aus.sigencloud.com)
 //
 // Rate limits: Sigenergy allows ~1 req/endpoint/5 min for third-party keys.
 // The function caches the bearer token in memory for warm invocations.
@@ -17,7 +18,9 @@
 
 'use strict';
 
-const BASE = process.env.SIGEN_BASE_URL || 'https://api-aus.sigencloud.com';
+const BASE      = process.env.SIGEN_BASE_URL  || 'https://api-aus.sigencloud.com';
+const MQTT_HOST = process.env.SIGEN_MQTT_HOST || 'mqtt-aus.sigencloud.com';
+const MQTT_PORT = parseInt(process.env.SIGEN_MQTT_PORT || '1883', 10);
 
 // ── In-memory token cache (survives warm Netlify function instances) ──────────
 let _cachedToken  = null;
@@ -71,6 +74,95 @@ async function sigenPost(token, path, body) {
   });
   if (!res.ok && res.status === 429) throw new Error('Sigenergy rate limit hit — wait ~5 minutes and retry');
   return res.json();
+}
+
+// ── MQTT battery command ─────────────────────────────────────────────────────
+// Sends a single battery command over MQTT and waits for a response (or times out).
+// Returns a Promise<object> — resolves with { success: true } or rejects with an Error.
+//
+// commandPayload example:
+//   { systemId, activeMode: 'charge', startTime: <unix_s>, duration: 30,
+//     chargingPower: 25.0, chargePriorityType: 'GRID' }
+//
+// For mode changes (charge/discharge/self-consume) set activeMode to:
+//   'charge'        — force grid charge (chargePriorityType: 'GRID' or 'SOLAR')
+//   'discharge'     — force discharge to loads/grid
+//   'selfConsume'   — return to normal self-consumption mode
+function sendMqttBatteryCommand(token, commandPayload) {
+  return new Promise((resolve, reject) => {
+    let mqtt;
+    try { mqtt = require('mqtt'); } catch (e) {
+      return reject(new Error('mqtt package not available — add it to netlify/functions/package.json'));
+    }
+
+    const clientId = `sigen-proxy-${Date.now()}`;
+    const client   = mqtt.connect({
+      host:      MQTT_HOST,
+      port:      MQTT_PORT,
+      protocol:  'mqtt',
+      clientId,
+      username:  token,        // Bearer token used as MQTT username
+      password:  '',
+      clean:     true,
+      connectTimeout: 10_000,
+      reconnectPeriod: 0       // no auto-reconnect in a serverless context
+    });
+
+    const TIMEOUT_MS  = 15_000;
+    const TOPIC_PUB   = 'openapi/instruction/command';
+    const TOPIC_SUB   = `openapi/instruction/command/reply/${clientId}`;
+    let   timer       = null;
+    let   settled     = false;
+
+    const finish = (err, data) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      client.end(true);
+      if (err) reject(err);
+      else     resolve(data || { success: true });
+    };
+
+    client.on('error',   (err) => finish(new Error(`MQTT connection error: ${err.message}`)));
+    client.on('offline', ()    => finish(new Error('MQTT broker unreachable — check SIGEN_MQTT_HOST')));
+
+    client.on('connect', () => {
+      // Subscribe to reply topic first
+      client.subscribe(TOPIC_SUB, { qos: 1 }, (err) => {
+        if (err) return finish(new Error(`MQTT subscribe error: ${err.message}`));
+
+        const message = JSON.stringify({
+          accessToken: token,
+          replyTopic:  TOPIC_SUB,
+          commands:    [commandPayload]
+        });
+
+        client.publish(TOPIC_PUB, message, { qos: 1 }, (err) => {
+          if (err) return finish(new Error(`MQTT publish error: ${err.message}`));
+          // Start timeout after publish
+          timer = setTimeout(() => {
+            // Timeout is non-fatal — the command may still have been accepted.
+            // Resolve with a warning rather than hard-failing.
+            finish(null, { success: true, warning: 'No MQTT reply received within timeout — command sent but acknowledgement not confirmed' });
+          }, TIMEOUT_MS);
+        });
+      });
+    });
+
+    client.on('message', (topic, msg) => {
+      if (topic !== TOPIC_SUB) return;
+      try {
+        const reply = JSON.parse(msg.toString());
+        if (reply.code !== 0 && reply.code !== undefined) {
+          finish(new Error(`Battery command rejected (code ${reply.code}): ${reply.msg || 'unknown'}`));
+        } else {
+          finish(null, { success: true, reply });
+        }
+      } catch (e) {
+        finish(null, { success: true, rawReply: msg.toString() });
+      }
+    });
+  });
 }
 
 // ── CORS headers ─────────────────────────────────────────────────────────────
@@ -186,11 +278,42 @@ exports.handler = async (event) => {
         result = await sigenPost(token, '/openapi/board/offboard', [systemId]);
         break;
 
+      // ── MQTT battery command ─────────────────────────────────────────────
+      case 'batteryCommand': {
+        // Send a direct battery command over MQTT.
+        // Required params: systemId
+        // Optional params: activeMode (default: 'charge'), duration (default: 60 min),
+        //   chargingPower (default: null = use system max), chargePriorityType (default: 'GRID'),
+        //   startTime (default: now)
+        if (!systemId) throw new Error('systemId required for action=batteryCommand');
+
+        const activeMode        = params.activeMode        || 'charge';
+        const duration          = parseInt(params.duration  || '60', 10);   // minutes
+        const startTime         = Math.floor(Date.now() / 1000);
+        const chargePriorityType = params.chargePriorityType || 'GRID';
+
+        const cmd = {
+          systemId,
+          activeMode,
+          startTime,
+          duration,
+          chargePriorityType
+        };
+
+        // Only include chargingPower if explicitly supplied (null = let inverter decide)
+        if (params.chargingPower !== undefined && params.chargingPower !== null && params.chargingPower !== '') {
+          cmd.chargingPower = parseFloat(params.chargingPower);
+        }
+
+        result = await sendMqttBatteryCommand(token, cmd);
+        break;
+      }
+
       default:
         return {
           statusCode: 400,
           headers:    CORS,
-          body:       JSON.stringify({ error: `Unknown action: "${action}". Valid: systems, devices, summary, energyFlow, deviceRealtime, setMode, onboard, offboard` })
+          body:       JSON.stringify({ error: `Unknown action: "${action}". Valid: systems, devices, summary, energyFlow, deviceRealtime, setMode, onboard, offboard, batteryCommand` })
         };
     }
 

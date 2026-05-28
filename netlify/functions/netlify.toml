@@ -1,0 +1,9 @@
+[build]
+  functions = "netlify/functions"
+
+# ── Scheduled function: auto battery charge/discharge ────────────────────────
+# Runs every 5 minutes — checks LocalVolts price and controls the Sigenergy
+# battery automatically based on the rules configured in the dashboard.
+[[functions]]
+  name     = "battery-auto"
+  schedule = "*/5 * * * *"

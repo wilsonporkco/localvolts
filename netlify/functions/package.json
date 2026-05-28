@@ -1,0 +1,9 @@
+{
+  "name": "localvolts-netlify-functions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Netlify function dependencies for Localvolts Energy Dashboard",
+  "dependencies": {
+    "mqtt": "^5.0.0"
+  }
+}
