@@ -1,11 +1,10 @@
 [build]
   functions = "netlify/functions"
-  publish   = "."
 
-# ── Scheduled function: check prices every 30 minutes ─────────────────────
-[functions."price-alert"]
+[[functions]]
+  name     = "price-alert"
   schedule = "*/30 * * * *"
 
-# ── Node version ──────────────────────────────────────────────────────────
-[functions]
-  node_bundler = "esbuild"
+[[functions]]
+  name     = "battery-auto"
+  schedule = "*/5 * * * *"
