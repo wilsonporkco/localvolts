@@ -31,8 +31,8 @@
 'use strict';
 
 // ── Config ───────────────────────────────────────────────────────────────────
-const SUPABASE_URL     = process.env.SUPABASE_URL;
-const SUPABASE_KEY     = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_URL     = process.env.SUPABASE_URL || 'https://zmljvelkbhzalrniebhz.supabase.co';
+const SUPABASE_KEY     = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_KEY;
 const SIGEN_APP_KEY    = process.env.SIGEN_APP_KEY;
 const SIGEN_APP_SECRET = process.env.SIGEN_APP_SECRET;
 const LV_PROXY_URL     = process.env.LV_PROXY_URL;     // LocalVolts proxy endpoint
