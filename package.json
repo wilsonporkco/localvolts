@@ -4,6 +4,7 @@
   "private": true,
   "description": "Localvolts Energy Dashboard with price alerts",
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "mqtt": "^5.0.0"
   }
 }
