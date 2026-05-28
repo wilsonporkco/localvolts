@@ -726,6 +726,41 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
       </div>
     </div>
 
+    <!-- Battery PIN confirmation modal -->
+    <div id="batt-pin-overlay" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:18px;padding:28px 32px;width:280px;box-shadow:0 20px 60px rgba(0,0,0,0.25);text-align:center;position:relative;">
+        <div style="font-size:22px;margin-bottom:6px;">🔒</div>
+        <div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:3px;">Battery controls</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:18px;">Enter your PIN to continue</div>
+
+        <!-- Dots -->
+        <div style="display:flex;gap:14px;justify-content:center;margin-bottom:20px;" id="batt-pin-dots">
+          <div style="width:11px;height:11px;border-radius:50%;border:1.5px solid #d1d5db;" id="bpd0"></div>
+          <div style="width:11px;height:11px;border-radius:50%;border:1.5px solid #d1d5db;" id="bpd1"></div>
+          <div style="width:11px;height:11px;border-radius:50%;border:1.5px solid #d1d5db;" id="bpd2"></div>
+          <div style="width:11px;height:11px;border-radius:50%;border:1.5px solid #d1d5db;" id="bpd3"></div>
+        </div>
+
+        <!-- Keypad -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('1')">1</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('2')">2</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('3')">3</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('4')">4</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('5')">5</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('6')">6</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('7')">7</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('8')">8</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('9')">9</button>
+          <button class="btn btn-ghost" style="font-size:13px;color:var(--text3);padding:12px;" onclick="battPinCancel()">Cancel</button>
+          <button class="btn btn-ghost" style="font-size:16px;font-weight:600;padding:12px;" onclick="battPinKey('0')">0</button>
+          <button class="btn btn-ghost" style="font-size:14px;padding:12px;" onclick="battPinDel()">⌫</button>
+        </div>
+
+        <div id="batt-pin-error" style="font-family:var(--mono);font-size:11px;color:var(--red);min-height:16px;"></div>
+      </div>
+    </div>
+
     <!-- BATTERY PANEL -->
     <div class="panel" id="panel-battery">
       <div class="page-header">
@@ -808,20 +843,38 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <!-- Mode control + last updated -->
           <div class="two-charts">
             <div class="chart-card">
-              <div class="chart-title" style="margin-bottom:12px;">Operating Mode</div>
-              <div id="battery-mode-display" style="margin-bottom:14px;">
-                <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:4px;">Current mode</div>
-                <div id="battery-mode-label" style="font-size:15px;font-weight:600;color:var(--text);">—</div>
+              <div class="chart-title" style="margin-bottom:14px;">Operating Mode</div>
+
+              <!-- Mode tiles -->
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;" id="battery-mode-btns">
+
+                <!-- Auto tile -->
+                <div id="mode-tile-auto" onclick="activateAutoMode()"
+                     style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
+                  <div style="font-size:20px;margin-bottom:5px;">🤖</div>
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Auto</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Price rules<br>control battery</div>
+                </div>
+
+                <!-- Self-Use tile -->
+                <div id="mode-tile-0" onclick="setBatteryMode(0)"
+                     style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
+                  <div style="font-size:20px;margin-bottom:5px;">☀️</div>
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Self-Use</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Solar → battery<br>then home</div>
+                </div>
+
+                <!-- Feed-in tile -->
+                <div id="mode-tile-1" onclick="setBatteryMode(1)"
+                     style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
+                  <div style="font-size:20px;margin-bottom:5px;">⬆️</div>
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Feed-in</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Export all solar<br>to grid</div>
+                </div>
+
               </div>
-              <div style="display:flex;flex-wrap:wrap;gap:8px;" id="battery-mode-btns">
-                <button class="btn btn-ghost" style="font-size:12px;" onclick="setBatteryMode(0)" title="Battery charges from excess solar, discharges to cover home load">
-                  ☀️ Max Self-Use
-                </button>
-                <button class="btn btn-ghost" style="font-size:12px;" onclick="setBatteryMode(1)" title="All generation exported to grid">
-                  ⬆️ Full Feed-in
-                </button>
-              </div>
-              <div id="battery-mode-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:10px;min-height:18px;"></div>
+
+              <div id="battery-mode-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);min-height:18px;"></div>
             </div>
             <div class="chart-card">
               <div class="chart-title" style="margin-bottom:12px;">System Info</div>
@@ -3689,9 +3742,16 @@ async function loadBattery() {
     if (pvEl)   { pvEl.textContent   = pvkW   !== null ? pvkW.toFixed(2)   : '—'; }
     if (loadEl) { loadEl.textContent = loadkW !== null ? loadkW.toFixed(2) : '—'; }
 
-    // ── Mode label ───────────────────────────────────────────────────────
-    var modeLbl = document.getElementById('battery-mode-label');
-    if (modeLbl) modeLbl.textContent = opMode !== null ? (MODES[opMode] || 'Mode '+opMode) : 'Unknown';
+    // ── Mode tiles — highlight active mode ───────────────────────────────
+    // If auto rules are on, always show Auto as the active tile
+    if (autoRuleEnabled) {
+      updateModeTiles('auto');
+    } else if (opMode !== null && (opMode === 0 || opMode === 1)) {
+      updateModeTiles(opMode);
+    } else {
+      // energyFlow doesn't return mode — keep whatever tile was last set
+      if (_activeModeKey === null) updateModeTiles(null);
+    }
 
     // ── Info rows ────────────────────────────────────────────────────────
     var sys = sigenSystems.find(function(s){ return s.systemId===systemId; }) || {};
@@ -3725,35 +3785,181 @@ async function loadBattery() {
   }
 }
 
+// ── Battery PIN guard ─────────────────────────────────────────────────────────
+// A lightweight PIN prompt that gates battery controls (mode changes, rule saves).
+// Uses a separate battery-specific PIN (hardcoded — not the same as the app login PIN).
+// Auth is remembered for 10 minutes in sessionStorage so the user isn't prompted
+// for every single click.
+
+var _battPinBuffer   = '';
+var _battPinCallback = null;
+var BATT_PIN_SESSION = 'lv_batt_pin_ok';
+var BATT_PIN_TTL     = 10 * 60 * 1000; // 10 minutes
+
+function isBattPinAuthed() {
+  try {
+    var expiry = parseInt(sessionStorage.getItem(BATT_PIN_SESSION) || '0', 10);
+    return expiry > Date.now();
+  } catch(e) { return false; }
+}
+
+function setBattPinAuthed() {
+  try { sessionStorage.setItem(BATT_PIN_SESSION, Date.now() + BATT_PIN_TTL); } catch(e) {}
+}
+
+// Call before any battery control action.
+// If already auth'd: runs fn() immediately.
+// Otherwise: shows PIN modal, runs fn() on success.
+function requireBatteryPin(fn) {
+  if (isBattPinAuthed()) { fn(); return; }
+  _battPinCallback = fn;
+  _battPinBuffer   = '';
+  battPinUpdateDots();
+  document.getElementById('batt-pin-error').textContent = '';
+  var ov = document.getElementById('batt-pin-overlay');
+  ov.style.display = 'flex';
+}
+
+function battPinKey(digit) {
+  if (_battPinBuffer.length >= 4) return;
+  _battPinBuffer += digit;
+  battPinUpdateDots();
+  if (_battPinBuffer.length === 4) {
+    setTimeout(battPinCheck, 80); // tiny delay so last dot fills visibly
+  }
+}
+
+function battPinDel() {
+  _battPinBuffer = _battPinBuffer.slice(0, -1);
+  battPinUpdateDots();
+}
+
+function battPinCancel() {
+  _battPinBuffer   = '';
+  _battPinCallback = null;
+  document.getElementById('batt-pin-overlay').style.display = 'none';
+}
+
+function battPinUpdateDots() {
+  for (var i = 0; i < 4; i++) {
+    var d = document.getElementById('bpd' + i);
+    if (!d) continue;
+    d.style.background  = i < _battPinBuffer.length ? 'var(--accent)' : '';
+    d.style.borderColor = i < _battPinBuffer.length ? 'var(--accent)' : '#d1d5db';
+  }
+}
+
+function battPinCheck() {
+  var stored = '1289';   // battery controls PIN (separate from app login PIN)
+  if (_battPinBuffer === stored) {
+    setBattPinAuthed();
+    document.getElementById('batt-pin-overlay').style.display = 'none';
+    var cb = _battPinCallback;
+    _battPinBuffer   = '';
+    _battPinCallback = null;
+    if (cb) cb();
+  } else {
+    // Shake and show error
+    var errEl = document.getElementById('batt-pin-error');
+    if (errEl) errEl.textContent = 'Incorrect PIN';
+    for (var i = 0; i < 4; i++) {
+      var d2 = document.getElementById('bpd' + i);
+      if (d2) { d2.style.background = '#ef4444'; d2.style.borderColor = '#ef4444'; }
+    }
+    _battPinBuffer = '';
+    setTimeout(function() {
+      battPinUpdateDots();
+      var e = document.getElementById('batt-pin-error');
+      if (e) e.textContent = '';
+    }, 900);
+  }
+}
+
+// ── Mode tile highlighting ────────────────────────────────────────────────────
+var _activeModeKey = null;  // 'auto' | 0 | 1 | 2 | 3 | null
+
+function updateModeTiles(activeKey) {
+  _activeModeKey = activeKey;
+  var keys  = ['auto', 0, 1];
+  var colors = {
+    auto: { border: '#6366f1', bg: '#eef2ff', text: '#4338ca' },
+    0:    { border: '#10b981', bg: '#ecfdf5', text: '#065f46' },
+    1:    { border: '#3b82f6', bg: '#eff6ff', text: '#1d4ed8' }
+  };
+  keys.forEach(function(k) {
+    var el = document.getElementById('mode-tile-' + k);
+    if (!el) return;
+    if (k === activeKey) {
+      var c = colors[k] || { border: '#6366f1', bg: '#eef2ff', text: '#4338ca' };
+      el.style.borderColor = c.border;
+      el.style.background  = c.bg;
+      // tint the label
+      var lbl = el.querySelector('div:nth-child(2)');
+      if (lbl) lbl.style.color = c.text;
+    } else {
+      el.style.borderColor = '#e5e7eb';
+      el.style.background  = '';
+      var lbl2 = el.querySelector('div:nth-child(2)');
+      if (lbl2) lbl2.style.color = '';
+    }
+  });
+}
+
 // ── Mode control ─────────────────────────────────────────────────────────────
-async function setBatteryMode(mode) {
+
+// Activate Auto mode — turns on Auto Rules and returns hardware to self-consumption
+function activateAutoMode() { requireBatteryPin(_activateAutoMode); }
+function _activateAutoMode() {
+  if (!autoRuleEnabled) {
+    autoRuleEnabled = true;
+    var _sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
+    sbSettingsSave('batt_rules', { enabled: true, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
+    try { localStorage.setItem('batt_rule_enabled','true'); } catch(e){}
+    updateRuleToggleUI();
+    startAutoRuleTimer();
+  }
+  updateModeTiles('auto');
+  var statusEl = document.getElementById('battery-mode-status');
+  if (statusEl) { statusEl.textContent = '🤖 Auto rules active — price-based charging enabled'; statusEl.style.color = '#6366f1'; }
+  checkAutoRule();
+}
+
+function setBatteryMode(mode) { requireBatteryPin(function(){ _setBatteryMode(mode); }); }
+async function _setBatteryMode(mode) {
   var systemId = (document.getElementById('battery-system-select')||{value:''}).value || sigenActiveSystemId;
   if (!systemId) { alert('No system selected.'); return; }
 
-  var MODES = { 0:'Maximum Self-Consumption', 1:'Full Feed-in to Grid', 2:'Time of Use', 3:'Backup / Emergency' };
+  var MODES    = { 0:'Max Self-Use', 1:'Full Feed-in to Grid', 2:'Time of Use', 3:'Backup / Emergency' };
   var statusEl = document.getElementById('battery-mode-status');
-  var btns     = document.getElementById('battery-mode-btns');
   if (statusEl) { statusEl.textContent = 'Setting mode…'; statusEl.style.color='var(--text3)'; }
-  if (btns) Array.from(btns.querySelectorAll('button')).forEach(function(b){ b.disabled=true; });
+
+  // Switching to a manual mode — disable auto rules
+  if (autoRuleEnabled) {
+    autoRuleEnabled = false;
+    var _sys2 = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
+    sbSettingsSave('batt_rules', { enabled: false, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, systemId: _sys2.systemId||'', nmi: _sys2.nmi||'' });
+    try { localStorage.setItem('batt_rule_enabled','false'); } catch(e){}
+    updateRuleToggleUI();
+    stopAutoRuleTimer();
+  }
+
+  // Optimistically highlight the tile
+  updateModeTiles(mode);
 
   try {
     await sigenCall('setMode', { systemId: systemId, mode: mode });
-    if (statusEl) { statusEl.textContent = '✓ Mode set: '+MODES[mode]; statusEl.style.color='var(--green)'; }
-    var modeLbl = document.getElementById('battery-mode-label');
-    if (modeLbl) modeLbl.textContent = MODES[mode];
+    if (statusEl) { statusEl.textContent = '✓ Set to '+MODES[mode]; statusEl.style.color='var(--green)'; }
     setTimeout(function(){ if(statusEl) statusEl.textContent=''; }, 4000);
   } catch(err) {
+    updateModeTiles(null);  // revert highlight on error
     if (statusEl) {
-      // If the endpoint URL is wrong for this key type, show a helpful message
       statusEl.style.color = 'var(--red)';
       if (err.message.includes('404') || err.message.includes('403')) {
-        statusEl.textContent = '✗ Control not available — your API key may need additional permissions';
+        statusEl.textContent = '✗ Control not available — API key may need extra permissions';
       } else {
         statusEl.textContent = '✗ '+err.message;
       }
     }
-  } finally {
-    if (btns) Array.from(btns.querySelectorAll('button')).forEach(function(b){ b.disabled=false; });
   }
 }
 
@@ -3901,13 +4107,15 @@ function updateRuleThresholdDisplay() {
   if (el) el.textContent = '≤ ' + autoRuleThreshold.toFixed(1) + ' c/kWh';
 }
 
-function toggleAutoRule() {
+function toggleAutoRule() { requireBatteryPin(_toggleAutoRule); }
+function _toggleAutoRule() {
   autoRuleEnabled = !autoRuleEnabled;
   // Persist toggle state online (include systemId + nmi so scheduled function has everything it needs)
   var _sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
   sbSettingsSave('batt_rules', { enabled: autoRuleEnabled, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
   try { localStorage.setItem('batt_rule_enabled', autoRuleEnabled ? 'true' : 'false'); } catch(e) {}
   updateRuleToggleUI();
+  updateModeTiles(autoRuleEnabled ? 'auto' : null);
   if (autoRuleEnabled) {
     checkAutoRule();
     startAutoRuleTimer();
