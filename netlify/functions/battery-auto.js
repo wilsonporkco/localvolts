@@ -139,7 +139,20 @@ async function sendBatteryCommand(token, commandPayload) {
     body:    JSON.stringify(body)
   });
   if (res.status === 429) throw new Error('Sigenergy rate limit hit');
-  const json = await res.json();
+
+  // Handle empty body (204 No Content or empty 200)
+  const text = await res.text();
+  if (!text || !text.trim()) {
+    if (res.ok) return { success: true };
+    throw new Error(`Battery command failed (HTTP ${res.status}) — empty response`);
+  }
+
+  let json;
+  try { json = JSON.parse(text); } catch (e) {
+    if (res.ok) return { success: true, raw: text.slice(0, 200) };
+    throw new Error(`Battery command failed (HTTP ${res.status}): ${text.slice(0, 200)}`);
+  }
+
   if (json.code !== 0 && json.code !== undefined) {
     throw new Error(`Battery command rejected (code ${json.code}): ${json.msg || 'unknown'}`);
   }
