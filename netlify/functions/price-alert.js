@@ -38,16 +38,6 @@ async function sbSet(key, value) {
   });
 }
 
-// Read from lv_settings table (used by battery-auto and dashboard)
-async function sbGetSettings(key) {
-  var res  = await fetch(SUPABASE_URL + '/rest/v1/lv_settings?key=eq.' + encodeURIComponent(key) + '&select=value&limit=1', { headers: sbHeaders() });
-  if (!res.ok) return null;
-  var rows = await res.json();
-  if (!Array.isArray(rows) || !rows.length) return null;
-  var raw = rows[0].value;
-  try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return raw; }
-}
-
 // Query lv_intervals for a given NMI over the next 24 hours
 async function fetchForecast(nmi, now) {
   var fromTs = new Date(now).toISOString();
@@ -193,32 +183,6 @@ exports.handler = async function (event, context) {
   var config = await sbGet('alerts');
   if (!config || !Array.isArray(config.alerts)) config = { alerts: [] };
 
-  // ── Auto-add battery NMI ─────────────────────────────────────────────────
-  // If batt_rules has an NMI configured, automatically include it in price
-  // checks even if it hasn't been manually added to the alerts config.
-  try {
-    var battRules = await sbGetSettings('batt_rules');
-    if (battRules && battRules.nmi) {
-      var battNmi = String(battRules.nmi);
-      var alreadyInAlerts = config.alerts.some(function(a) { return a.nmi === battNmi; });
-      if (!alreadyInAlerts) {
-        // Use emails from the first configured alert, and the battery threshold
-        var fallbackEmails = config.alerts.length ? config.alerts[0].emails : [];
-        var battThreshold  = typeof battRules.threshold === 'number' ? battRules.threshold : 10;
-        config.alerts.push({
-          nmi:       battNmi,
-          nmiName:   'Battery NMI (' + battNmi + ')',
-          emails:    fallbackEmails,
-          threshold: battThreshold,
-          _autoBatt: true   // marker so we can identify it in logs
-        });
-        console.log('[price-alert] Auto-added battery NMI', battNmi, 'with threshold', battThreshold + 'c');
-      }
-    }
-  } catch (e) {
-    console.warn('[price-alert] Could not load batt_rules:', e.message);
-  }
-
   if (!config.alerts.length) {
     console.log('[price-alert] No alerts configured');
     return { statusCode: 200, body: 'No alerts configured' };
@@ -226,6 +190,7 @@ exports.handler = async function (event, context) {
 
   var sentAlerts = (await sbGet('sent-alerts')) || {};
   const now = Date.now();
+  const RATE_LIMIT_MS = 60 * 60 * 1000; // 1 hour between emails per NMI
   Object.keys(sentAlerts).forEach(function(k) {
     if (sentAlerts[k] < now - 48 * 3600 * 1000) delete sentAlerts[k];
   });
@@ -281,6 +246,15 @@ exports.handler = async function (event, context) {
         }
       }
       if (wStart) windows.push({ start: wStart, end: wEnd, minRate: wMin });
+
+      // Rate limit: max 1 email per NMI per hour
+      var rateLimitKey = nmi + '|last_sent';
+      var lastSentMs   = sentAlerts[rateLimitKey] || 0;
+      if (now - lastSentMs < RATE_LIMIT_MS) {
+        var waitMins = Math.ceil((RATE_LIMIT_MS - (now - lastSentMs)) / 60000);
+        console.log('[price-alert] Rate limited for', nmi, '— next email allowed in', waitMins, 'min');
+        continue;
+      }
 
       for (var k = 0; k < windows.length; k++) {
         var win       = windows[k];
@@ -344,10 +318,12 @@ exports.handler = async function (event, context) {
         });
         var emailBody = await emailRes.json();
         if (emailRes.ok && emailBody.data && emailBody.data.succeeded > 0) {
-          sentAlerts[windowKey] = now;
+          sentAlerts[windowKey]    = now;
+          sentAlerts[rateLimitKey] = now; // stamp rate-limit timestamp — no more emails for this NMI for 1 hour
           var msg = 'Sent alert for ' + nmi + ' — ' + win.minRate.toFixed(1) + 'c for ' + durStr + ' starting ' + fmtAEST(startMs);
           results.push(msg);
           console.log('[price-alert]', msg);
+          break; // only 1 email per NMI per run — rate limit handles the rest
         } else {
           console.error('[price-alert] SMTP2GO error for', nmi, ':', JSON.stringify(emailBody));
         }
