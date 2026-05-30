@@ -38,12 +38,46 @@ async function sbSet(key, value) {
   });
 }
 
-// Query lv_intervals for a given NMI over the next 24 hours
+// Query LocalVolts API directly for live forecast data.
+// Falls back to Supabase lv_intervals if the API call fails (e.g. during an outage).
 async function fetchForecast(nmi, now) {
+  // ── Try LocalVolts API first (always fresh) ──────────────────────────────
+  try {
+    var apiKey  = process.env.LV_API_KEY  || 'e3c7ea100a1e29e297bfe71b8aa6c2da';
+    var partner = process.env.LV_PARTNER  || '140046';
+    var lvUrl   = 'https://api.localvolts.com/v1/customer/interval?NMI=' + encodeURIComponent(nmi);
+    var lvRes   = await fetch(lvUrl, {
+      headers: {
+        'Authorization': 'apikey ' + apiKey,
+        'partner':       partner,
+        'User-Agent':    'LocalvoltsDashboard/1.0'
+      }
+    });
+    if (lvRes.ok) {
+      var lvData = await lvRes.json();
+      if (Array.isArray(lvData) && lvData.length) {
+        console.log('[price-alert] Got', lvData.length, 'intervals direct from LocalVolts for', nmi);
+        return lvData
+          .map(function(r) {
+            return {
+              intervalEnd:     r.intervalEnd || r.interval_end,
+              costsAllVarRate: r.costsAllVarRate != null ? r.costsAllVarRate : r.costs_rate
+            };
+          })
+          .filter(function(r) {
+            return r.intervalEnd && new Date(r.intervalEnd).getTime() >= now;
+          })
+          .sort(function(a, b) { return new Date(a.intervalEnd) - new Date(b.intervalEnd); });
+      }
+    }
+    console.warn('[price-alert] LocalVolts API returned', lvRes.status, 'for', nmi, '— falling back to Supabase');
+  } catch (e) {
+    console.warn('[price-alert] LocalVolts API fetch failed for', nmi, ':', e.message, '— falling back to Supabase');
+  }
+
+  // ── Fallback: Supabase lv_intervals (may be a few hours stale) ───────────
   var fromTs = new Date(now).toISOString();
   var toTs   = new Date(now + 24 * 3600 * 1000).toISOString();
-
-  // Supabase lv_intervals uses snake_case column names
   var url = SUPABASE_URL + '/rest/v1/lv_intervals' +
     '?select=nmi,interval_end,costs_rate' +
     '&nmi=eq.' + encodeURIComponent(nmi) +
@@ -55,10 +89,10 @@ async function fetchForecast(nmi, now) {
   var res  = await fetch(url, { headers: sbHeaders() });
   var data = await res.json();
   if (!Array.isArray(data)) {
-    console.error('[price-alert] Supabase error for', nmi, ':', JSON.stringify(data));
+    console.error('[price-alert] Supabase fallback error for', nmi, ':', JSON.stringify(data));
     return [];
   }
-
+  console.log('[price-alert] Got', data.length, 'intervals from Supabase fallback for', nmi);
   return data.map(function(r) {
     return {
       intervalEnd:     r.interval_end,
