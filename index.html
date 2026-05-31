@@ -2509,13 +2509,15 @@ async function loadAemoForecast() {
       }
     });
 
-    var nActual   = actuals.length;
-    var nForecast = forecast.length;
-    var forecastErr = res.headers.get('X-Forecast-Error');
+    var nActual      = actuals.length;
+    var nForecast    = forecast.length;
+    var forecastErr  = res.headers.get('X-Forecast-Error');
+    var forecastDbg  = res.headers.get('X-Forecast-Debug');
     var parts = [];
-    if (nActual)   parts.push(nActual   + ' actual intervals');
-    if (nForecast) parts.push(nForecast + ' forecast intervals (AEMO P5)');
+    if (nActual)        parts.push(nActual + ' actual intervals');
+    if (nForecast)      parts.push(nForecast + ' forecast intervals (AEMO P5)');
     else if (forecastErr) parts.push('⚠ forecast error: ' + forecastErr);
+    else if (forecastDbg) parts.push('⚠ no forecast — ' + forecastDbg);
     if (footerEl) footerEl.textContent = region + ' · ' + parts.join(' + ') + ' · wholesale spot only';
 
   } catch(e) {
