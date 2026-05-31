@@ -2,7 +2,8 @@
  * aemo-proxy.js — Netlify function
  *
  * Actuals  → OpenElectricity REST API (fast JSON, last 2 hours of 5-min prices)
- * Forecast → NEMWeb P5_Reports ZIP (pre-dispatch, ~1 hour ahead, every 5 min)
+ * Forecast → NEMWeb P5_Reports ZIP via HTTP Range requests (fetch header + compressed
+ *            data only — ~80% less download than full ZIP)
  *
  * Both fetches run in parallel. If P5 fails, actuals still return.
  *
@@ -10,7 +11,6 @@
  *
  * GET /.netlify/functions/aemo-proxy?region=QLD1
  * Returns JSON array: [{ regionId, intervalDatetime, rrp, rrpCkwh, source }]
- *   source: "actual" | "forecast"
  */
 
 'use strict';
@@ -75,20 +75,6 @@ function resolveZipUrl(html, pattern) {
   return path.startsWith('http') ? path : NEMWEB + (path.startsWith('/') ? path : '/' + path);
 }
 
-function unzipFirst(buf) {
-  const SIG = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-  const off  = buf.indexOf(SIG);
-  if (off === -1) throw new Error('Not a ZIP');
-  const method = buf.readUInt16LE(off + 8);
-  const start  = off + 30 + buf.readUInt16LE(off + 26) + buf.readUInt16LE(off + 28);
-  let cSize    = buf.readUInt32LE(off + 18);
-  if (cSize === 0) { const nxt = buf.indexOf(SIG, start); cSize = (nxt === -1 ? buf.length : nxt) - start; }
-  const data = buf.slice(start, start + cSize);
-  if (method === 0) return data.toString('utf8');
-  if (method === 8) return zlib.inflateRawSync(data).toString('utf8');
-  throw new Error('Unknown ZIP method ' + method);
-}
-
 function parseMMS(csv, cat, tbl) {
   const rows = []; let cols = null;
   for (const raw of csv.split('\n')) {
@@ -103,51 +89,75 @@ function parseMMS(csv, cat, tbl) {
   return rows;
 }
 
-/* ── NEMWeb P5 URL from current time (skip directory listing) ───────── */
-// P5 files publish every 5 min: PUBLIC_P5MIN_YYYYMMDDHHMI_YYYYMMDDHHMI.zip
-// Try current 5-min slot then fall back to previous two slots
-function p5CandidateUrls() {
-  const now  = new Date();
-  // NEMWeb uses AEST (UTC+10)
-  const aest = new Date(now.getTime() + 10 * 60 * 60 * 1000);
-  const urls = [];
-  for (let back = 0; back <= 2; back++) {
-    const t   = new Date(aest.getTime() - back * 5 * 60 * 1000);
-    const min = Math.floor(t.getUTCMinutes() / 5) * 5;
-    const pad = function(n){ return String(n).padStart(2,'0'); };
-    const dt  = '' + t.getUTCFullYear()
-      + pad(t.getUTCMonth()+1) + pad(t.getUTCDate())
-      + pad(t.getUTCHours()) + pad(min) + '00';
-    // NEMWeb filename: PUBLIC_P5MIN_{run_dt}_{file_dt}.zip — both datetimes are the same for P5
-    urls.push(NEMWEB + '/REPORTS/CURRENT/P5_Reports/PUBLIC_P5MIN_' + dt + '_' + dt + '.zip');
+/* ── Download ZIP using HTTP Range to fetch only compressed data ─────── */
+// Step 1: fetch first 512 bytes → parse local file header → get compressed size + data offset
+// Step 2: fetch ONLY the compressed bytes → decompress with zlib
+// Falls back to full download if Range not supported (HTTP 200 instead of 206)
+async function downloadAndUnzip(zipUrl) {
+  const hdrs = { 'User-Agent': UA };
+
+  // Step 1: read ZIP local file header (512 bytes is always enough)
+  const hdrRes = await fetchWith(zipUrl, { headers: { ...hdrs, 'Range': 'bytes=0-511' } }, 8000);
+
+  if (hdrRes.status === 206) {
+    const hdrBuf = Buffer.from(await hdrRes.arrayBuffer());
+    const SIG    = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+    const off    = hdrBuf.indexOf(SIG);
+    if (off === -1) throw new Error('ZIP signature not found in header range');
+
+    const method    = hdrBuf.readUInt16LE(off + 8);
+    const fnLen     = hdrBuf.readUInt16LE(off + 26);
+    const exLen     = hdrBuf.readUInt16LE(off + 28);
+    const dataStart = off + 30 + fnLen + exLen;
+    const cSize     = hdrBuf.readUInt32LE(off + 18);
+
+    if (cSize > 0 && method === 8) {
+      // Step 2: fetch only compressed data bytes
+      const dataEnd = dataStart + cSize - 1;
+      console.log('[aemo-proxy] P5 range fetch: bytes ' + dataStart + '-' + dataEnd + ' (' + cSize + ' bytes compressed)');
+      const dataRes = await fetchWith(zipUrl, { headers: { ...hdrs, 'Range': 'bytes=' + dataStart + '-' + dataEnd } }, 10000);
+      if (dataRes.status !== 206) throw new Error('Range data request got HTTP ' + dataRes.status);
+      const compressed = Buffer.from(await dataRes.arrayBuffer());
+      return zlib.inflateRawSync(compressed).toString('utf8');
+    }
+    if (method === 0 && cSize > 0) {
+      // Stored (no compression) — fetch data range
+      const dataRes = await fetchWith(zipUrl, { headers: { ...hdrs, 'Range': 'bytes=' + dataStart + '-' + (dataStart + cSize - 1) } }, 10000);
+      return Buffer.from(await dataRes.arrayBuffer()).toString('utf8');
+    }
+    // cSize=0 or unknown method → fall through to full download
   }
-  return urls;
+
+  // Full download fallback
+  console.log('[aemo-proxy] P5 range not supported, full download');
+  const fullRes = await fetchWith(zipUrl, { headers: hdrs }, 18000);
+  if (!fullRes.ok) throw new Error('Full ZIP HTTP ' + fullRes.status);
+  const buf = Buffer.from(await fullRes.arrayBuffer());
+
+  // Parse local file header from full buffer
+  const SIG = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  const off  = buf.indexOf(SIG);
+  if (off === -1) throw new Error('Not a valid ZIP');
+  const method = buf.readUInt16LE(off + 8);
+  const start  = off + 30 + buf.readUInt16LE(off + 26) + buf.readUInt16LE(off + 28);
+  let cSize    = buf.readUInt32LE(off + 18);
+  if (cSize === 0) { const nxt = buf.indexOf(SIG, start); cSize = (nxt === -1 ? buf.length : nxt) - start; }
+  const data   = buf.slice(start, start + cSize);
+  if (method === 0) return data.toString('utf8');
+  if (method === 8) return zlib.inflateRawSync(data).toString('utf8');
+  throw new Error('Unknown ZIP compression method ' + method);
 }
 
 /* ── NEMWeb P5: forecast ~1 hour ahead ──────────────────────────────── */
 async function fetchForecast(region) {
-  // Try guessing URL from current time first (avoids directory listing round-trip)
-  const candidates = p5CandidateUrls();
-  let zipRes = null;
-  for (const url of candidates) {
-    try {
-      const r = await fetchWith(url, { headers: { 'User-Agent': UA } }, 14000);
-      if (r.ok) { zipRes = r; console.log('[aemo-proxy] P5 hit:', url); break; }
-    } catch(e) { /* try next */ }
-  }
+  // Get directory listing to find current ZIP URL (small HTML, fast)
+  const htmlRes = await fetchWith(P5_DIR, { headers: { 'User-Agent': UA } }, 7000);
+  if (!htmlRes.ok) throw new Error('NEMWeb listing HTTP ' + htmlRes.status);
+  const zipUrl  = resolveZipUrl(await htmlRes.text(), 'PUBLIC_P5MIN');
+  console.log('[aemo-proxy] P5 ZIP:', zipUrl);
 
-  // Fall back to directory listing if none of the guesses worked
-  if (!zipRes) {
-    const htmlRes = await fetchWith(P5_DIR, { headers: { 'User-Agent': UA } }, 6000);
-    if (!htmlRes.ok) throw new Error('NEMWeb listing HTTP ' + htmlRes.status);
-    const zipUrl  = resolveZipUrl(await htmlRes.text(), 'PUBLIC_P5MIN');
-    zipRes        = await fetchWith(zipUrl, { headers: { 'User-Agent': UA } }, 14000);
-    if (!zipRes.ok) throw new Error('P5 ZIP HTTP ' + zipRes.status);
-    console.log('[aemo-proxy] P5 fallback listing:', zipUrl);
-  }
-
-  const buf  = Buffer.from(await zipRes.arrayBuffer());
-  const csv  = unzipFirst(buf);
+  // Download using range requests (much faster than full ZIP)
+  const csv  = await downloadAndUnzip(zipUrl);
   const rows = parseMMS(csv, 'P5MIN', 'REGIONSOLUTION');
 
   return rows.filter(function(r) { return r.REGIONID === region; })
