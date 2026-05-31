@@ -531,6 +531,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   .metric-label { font-size: 8px; }
   /* Live grid: 2-col on phones */
   .live-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  /* Flex signals: stack columns on small screens */
+  .flex-signals-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
   /* Two-chart grid: single col */
   .two-charts { grid-template-columns: 1fr; }
   /* Summary box: 2-col compact */
@@ -1045,7 +1047,19 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div class="live-grid">
             <div class="detail-card"><div class="detail-title">Energy</div><div id="energy-rows"></div></div>
             <div class="detail-card"><div class="detail-title">Financials</div><div id="financial-rows"></div></div>
-            <div class="detail-card"><div class="detail-title">Flex signals</div><div id="flex-rows"></div></div>
+          </div>
+          <div class="detail-card" style="margin-bottom:10px;">
+            <div class="detail-title">Flex signals</div>
+            <div class="flex-signals-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--text3);text-transform:uppercase;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border);">Cost flex</div>
+                <div id="flex-cost-rows"></div>
+              </div>
+              <div>
+                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--text3);text-transform:uppercase;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border);">Earn flex</div>
+                <div id="flex-earn-rows"></div>
+              </div>
+            </div>
           </div>
           <div class="chart-card">
             <div class="chart-title">
@@ -2310,11 +2324,12 @@ async function loadLive() {
       dRow('Cost rate', fmt(d.costsAllVarRate,4), d.costsAllVarRateUnits||'c/kWh') +
       dRow('Demand cost', fmt(d.costsDemandMain,4), d.costsDemandMainUnits||'c/kW/Day');
 
-    document.getElementById('flex-rows').innerHTML =
-      dRow('Earn flex up', fmt(d.earningsFlexUp,4), 'c/kWh') +
-      dRow('Earn flex down', fmt(d.earningsFlexDown,4), 'c/kWh') +
-      dRow('Cost flex up', fmt(d.costsFlexUp,4), 'c/kWh') +
-      dRow('Cost flex down', fmt(d.costsFlexDown,4), 'c/kWh');
+    document.getElementById('flex-cost-rows').innerHTML =
+      dRow('Flex up', fmt(d.costsFlexUp,4), 'c/kWh') +
+      dRow('Flex down', fmt(d.costsFlexDown,4), 'c/kWh');
+    document.getElementById('flex-earn-rows').innerHTML =
+      dRow('Flex up', fmt(d.earningsFlexUp,4), 'c/kWh') +
+      dRow('Flex down', fmt(d.earningsFlexDown,4), 'c/kWh');
 
     // AEMO forecast loads separately
     loadAemoForecast();
