@@ -2,8 +2,12 @@
  * aemo-proxy.js — Netlify function
  *
  * Actuals  → OpenElectricity REST API (fast JSON, last 2 hours of 5-min prices)
- * Forecast → NEMWeb P5_Reports ZIP via HTTP Range requests (fetch header + compressed
- *            data only — ~80% less download than full ZIP)
+ * Forecast → NEMWeb P5_Reports ZIP via HTTP Range requests using EOCD approach:
+ *            1. HEAD → get total ZIP size
+ *            2. Range: last 4096 bytes → parse EOCD + Central Directory → get
+ *               accurate compressed size & data offset (works even for streaming ZIPs
+ *               where local file header has cSize=0)
+ *            3. Range: compressed data only → inflateRaw
  *
  * Both fetches run in parallel. If P5 fails, actuals still return.
  *
@@ -89,52 +93,107 @@ function parseMMS(csv, cat, tbl) {
   return rows;
 }
 
-/* ── Download ZIP using HTTP Range to fetch only compressed data ─────── */
-// Step 1: fetch first 512 bytes → parse local file header → get compressed size + data offset
-// Step 2: fetch ONLY the compressed bytes → decompress with zlib
-// Falls back to full download if Range not supported (HTTP 200 instead of 206)
+/* ── Download ZIP using EOCD + Range requests ───────────────────────── */
+// AEMO often uses streaming compression: cSize=0 in local file header.
+// Solution: read the Central Directory from the tail of the ZIP — it always
+// has the correct compressed size, even for streaming ZIPs.
+//
+// Steps:
+//   1. HEAD → Content-Length (total ZIP size)
+//   2. Range: last 4096 bytes → EOCD + Central Directory → compSize + dataOffset
+//   3. Range: compressed bytes → inflateRaw
 async function downloadAndUnzip(zipUrl) {
   const hdrs = { 'User-Agent': UA };
 
-  // Step 1: read ZIP local file header (512 bytes is always enough)
-  const hdrRes = await fetchWith(zipUrl, { headers: { ...hdrs, 'Range': 'bytes=0-511' } }, 8000);
+  // ── Step 1: HEAD to get total file size ─────────────────────────────
+  const headRes = await fetchWith(zipUrl, { method: 'HEAD', headers: hdrs }, 5000);
+  const totalSize = parseInt(headRes.headers.get('content-length') || '0');
+  if (!totalSize) throw new Error('No Content-Length from HEAD request');
+  console.log('[aemo-proxy] ZIP total size:', totalSize, 'bytes');
 
-  if (hdrRes.status === 206) {
-    const hdrBuf = Buffer.from(await hdrRes.arrayBuffer());
-    const SIG    = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-    const off    = hdrBuf.indexOf(SIG);
-    if (off === -1) throw new Error('ZIP signature not found in header range');
+  // ── Step 2: Fetch last 4096 bytes (EOCD + Central Directory) ────────
+  const tailStart = Math.max(0, totalSize - 4096);
+  const tailRes = await fetchWith(zipUrl, {
+    headers: { ...hdrs, 'Range': 'bytes=' + tailStart + '-' + (totalSize - 1) }
+  }, 7000);
 
-    const method    = hdrBuf.readUInt16LE(off + 8);
-    const fnLen     = hdrBuf.readUInt16LE(off + 26);
-    const exLen     = hdrBuf.readUInt16LE(off + 28);
-    const dataStart = off + 30 + fnLen + exLen;
-    const cSize     = hdrBuf.readUInt32LE(off + 18);
-
-    if (cSize > 0 && method === 8) {
-      // Step 2: fetch only compressed data bytes
-      const dataEnd = dataStart + cSize - 1;
-      console.log('[aemo-proxy] P5 range fetch: bytes ' + dataStart + '-' + dataEnd + ' (' + cSize + ' bytes compressed)');
-      const dataRes = await fetchWith(zipUrl, { headers: { ...hdrs, 'Range': 'bytes=' + dataStart + '-' + dataEnd } }, 10000);
-      if (dataRes.status !== 206) throw new Error('Range data request got HTTP ' + dataRes.status);
-      const compressed = Buffer.from(await dataRes.arrayBuffer());
-      return zlib.inflateRawSync(compressed).toString('utf8');
-    }
-    if (method === 0 && cSize > 0) {
-      // Stored (no compression) — fetch data range
-      const dataRes = await fetchWith(zipUrl, { headers: { ...hdrs, 'Range': 'bytes=' + dataStart + '-' + (dataStart + cSize - 1) } }, 10000);
-      return Buffer.from(await dataRes.arrayBuffer()).toString('utf8');
-    }
-    // cSize=0 or unknown method → fall through to full download
+  if (tailRes.status !== 206) {
+    // Server doesn't support Range — fall back to full download
+    console.log('[aemo-proxy] Range not supported (HTTP ' + tailRes.status + '), full download');
+    const buf = Buffer.from(await tailRes.arrayBuffer());
+    return inflateZipBuffer(buf);
   }
 
-  // Full download fallback
-  console.log('[aemo-proxy] P5 range not supported, full download');
-  const fullRes = await fetchWith(zipUrl, { headers: hdrs }, 18000);
-  if (!fullRes.ok) throw new Error('Full ZIP HTTP ' + fullRes.status);
-  const buf = Buffer.from(await fullRes.arrayBuffer());
+  const tail = Buffer.from(await tailRes.arrayBuffer());
 
-  // Parse local file header from full buffer
+  // Find End of Central Directory signature (search from end for safety)
+  const EOCD_SIG = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  const eocdPos  = tail.lastIndexOf(EOCD_SIG);
+  if (eocdPos === -1) throw new Error('EOCD signature not found in ZIP tail');
+
+  const cdOffset = tail.readUInt32LE(eocdPos + 16); // offset of CD from start of file
+  const cdBufPos = cdOffset - tailStart;             // position within our tail buffer
+
+  if (cdBufPos < 0 || cdBufPos >= tail.length) {
+    throw new Error('Central Directory not in tail buffer (cdOffset=' + cdOffset + ' tailStart=' + tailStart + ')');
+  }
+
+  // Parse first Central Directory entry
+  const CD_SIG = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+  if (!tail.slice(cdBufPos, cdBufPos + 4).equals(CD_SIG)) {
+    throw new Error('Central Directory signature mismatch at offset ' + cdBufPos);
+  }
+
+  const compMethod = tail.readUInt16LE(cdBufPos + 10);
+  const compSize   = tail.readUInt32LE(cdBufPos + 20);
+  const fnLen      = tail.readUInt16LE(cdBufPos + 28);
+  const cdExLen    = tail.readUInt16LE(cdBufPos + 30);
+  const lhOffset   = tail.readUInt32LE(cdBufPos + 42); // local header offset from file start
+
+  console.log('[aemo-proxy] CD entry: method=' + compMethod + ' compSize=' + compSize + ' lhOffset=' + lhOffset);
+
+  if (compSize === 0) throw new Error('Central Directory shows compSize=0 — unexpected');
+  if (compMethod !== 8) throw new Error('Unexpected compression method: ' + compMethod);
+
+  // Compute data start: local header (30) + filename (fnLen) + extra field
+  // Use CD extra field length as approximation for local extra field (safe for non-ZIP64)
+  const dataStart = lhOffset + 30 + fnLen + cdExLen;
+  const dataEnd   = dataStart + compSize - 1;
+  console.log('[aemo-proxy] P5 data range: bytes ' + dataStart + '-' + dataEnd + ' (' + compSize + ' compressed)');
+
+  // ── Step 3: Fetch compressed data only ──────────────────────────────
+  const dataRes = await fetchWith(zipUrl, {
+    headers: { ...hdrs, 'Range': 'bytes=' + dataStart + '-' + dataEnd }
+  }, 12000);
+
+  if (dataRes.status !== 206) throw new Error('Data range request returned HTTP ' + dataRes.status);
+
+  const compressed = Buffer.from(await dataRes.arrayBuffer());
+
+  // Try inflateRaw; if it fails (off-by-a-few on extra field), retry with ±4 byte offset
+  try {
+    return zlib.inflateRawSync(compressed).toString('utf8');
+  } catch (e) {
+    // Local extra field length might differ from CD — try small offsets
+    for (const delta of [4, -4, 8, -8, 12, -12]) {
+      const adjustedStart = dataStart + delta;
+      if (adjustedStart < 0 || adjustedStart + compSize > totalSize) continue;
+      try {
+        const retry = await fetchWith(zipUrl, {
+          headers: { ...hdrs, 'Range': 'bytes=' + adjustedStart + '-' + (adjustedStart + compSize - 1) }
+        }, 8000);
+        if (retry.status === 206) {
+          const comp2 = Buffer.from(await retry.arrayBuffer());
+          return zlib.inflateRawSync(comp2).toString('utf8');
+        }
+      } catch (_) { /* try next delta */ }
+    }
+    throw new Error('inflateRaw failed after retries: ' + e.message);
+  }
+}
+
+/* ── Full ZIP download + parse (fallback) ───────────────────────────── */
+function inflateZipBuffer(buf) {
   const SIG = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
   const off  = buf.indexOf(SIG);
   if (off === -1) throw new Error('Not a valid ZIP');
@@ -150,13 +209,12 @@ async function downloadAndUnzip(zipUrl) {
 
 /* ── NEMWeb P5: forecast ~1 hour ahead ──────────────────────────────── */
 async function fetchForecast(region) {
-  // Get directory listing to find current ZIP URL (small HTML, fast)
+  // Get directory listing to find current ZIP URL
   const htmlRes = await fetchWith(P5_DIR, { headers: { 'User-Agent': UA } }, 7000);
   if (!htmlRes.ok) throw new Error('NEMWeb listing HTTP ' + htmlRes.status);
   const zipUrl  = resolveZipUrl(await htmlRes.text(), 'PUBLIC_P5MIN');
   console.log('[aemo-proxy] P5 ZIP:', zipUrl);
 
-  // Download using range requests (much faster than full ZIP)
   const csv  = await downloadAndUnzip(zipUrl);
   const rows = parseMMS(csv, 'P5MIN', 'REGIONSOLUTION');
 
