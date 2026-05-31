@@ -1,0 +1,11 @@
+[build]
+  functions = "netlify/functions"
+
+[functions."price-alert"]
+  schedule = "*/5 * * * *"
+
+[functions."battery-auto"]
+  schedule = "*/5 * * * *"
+
+[functions."aemo-proxy"]
+  timeout = 26
