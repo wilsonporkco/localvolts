@@ -39,23 +39,23 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
 /* Layout */
 .app { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
-.sidebar { background: #1e293b; border-right: none; padding: 20px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
+.sidebar { background: #ffffff; border-right: 1px solid #e2e8f0; padding: 20px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.15) transparent; }
 .main { overflow: hidden; }
 
 /* Sidebar */
-.logo { padding: 0 18px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px; }
+.logo { padding: 0 18px 18px; border-bottom: 1px solid rgba(0,0,0,0.08); margin-bottom: 14px; }
 .logo-mark { font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 2px; }
 .logo-name { font-size: 16px; font-weight: 600; color: #f1f5f9; letter-spacing: -0.02em; }
 
 .nav { flex: 1; padding: 0 10px; }
-.nav-section { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: #64748b; text-transform: uppercase; padding: 0 10px; margin: 12px 0 4px; }
-.nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px; cursor: pointer; color: #94a3b8; font-size: 12px; font-weight: 400; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; }
-.nav-item:hover { background: rgba(255,255,255,0.08); color: #f1f5f9; }
-.nav-item.active { background: rgba(14,165,233,0.15); color: #38bdf8; font-weight: 500; }
+.nav-section { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: #94a3b8; text-transform: uppercase; padding: 0 10px; margin: 12px 0 4px; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px; cursor: pointer; color: #475569; font-size: 12px; font-weight: 400; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #1e293b; }
+.nav-item.active { background: rgba(14,165,233,0.12); color: #0284c7; font-weight: 500; }
 .nav-item svg { width: 14px; height: 14px; opacity: 0.7; flex-shrink: 0; }
 .nav-item.active svg { opacity: 1; }
 
-.sidebar-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.08); }
+.sidebar-footer { padding: 12px 18px; border-top: 1px solid rgba(0,0,0,0.08); }
 .partner-badge { font-family: var(--mono); font-size: 10px; color: #64748b; }
 .partner-id { color: #94a3b8; font-size: 11px; margin-top: 2px; }
 
@@ -2399,7 +2399,13 @@ async function loadAemoForecast() {
     var rawText = await res.text();
     var data;
     try { data = JSON.parse(rawText); } catch(e) { throw new Error('Invalid response from AEMO proxy'); }
-    if (!res.ok) throw new Error(data.error || 'AEMO proxy error ' + res.status);
+    if (!res.ok) {
+      var errMsg = (data && (data.errorMessage || data.error)) || '';
+      var isTimeout = res.status === 502 && (errMsg.toLowerCase().includes('timed out') || errMsg === '');
+      throw new Error(isTimeout
+        ? 'Request timed out — deploy the updated netlify.toml (timeout=26) and retry'
+        : (errMsg || 'AEMO proxy error ' + res.status));
+    }
     if (!Array.isArray(data) || !data.length) throw new Error('No AEMO data available');
 
     // Parse datetime strings into JS timestamps

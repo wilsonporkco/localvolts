@@ -6,3 +6,6 @@
 
 [functions."battery-auto"]
   schedule = "*/5 * * * *"
+
+[functions."aemo-proxy"]
+  timeout = 26
