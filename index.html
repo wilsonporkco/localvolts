@@ -39,16 +39,16 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
 /* Layout */
 .app { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
-.sidebar { background: #ffffff; border-right: 1px solid #e2e8f0; padding: 20px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.15) transparent; }
+.sidebar { background: #ffffff; border-right: 1px solid #e2e8f0; padding: 8px 0 20px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.15) transparent; }
 .main { overflow: hidden; }
 
 /* Sidebar */
-.logo { padding: 0 18px 18px; border-bottom: 1px solid rgba(0,0,0,0.08); margin-bottom: 14px; }
+.logo { padding: 0 18px 10px; border-bottom: 1px solid rgba(0,0,0,0.08); margin-bottom: 10px; }
 .logo-mark { font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; color: #38bdf8; text-transform: uppercase; margin-bottom: 2px; }
 .logo-name { font-size: 16px; font-weight: 600; color: #f1f5f9; letter-spacing: -0.02em; }
 
 .nav { flex: 1; padding: 0 10px; }
-.nav-section { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: #94a3b8; text-transform: uppercase; padding: 0 10px; margin: 12px 0 4px; }
+.nav-section { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: #94a3b8; text-transform: uppercase; padding: 0 10px; margin: 6px 0 4px; }
 .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px; cursor: pointer; color: #475569; font-size: 12px; font-weight: 400; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; }
 .nav-item:hover { background: rgba(0,0,0,0.05); color: #1e293b; }
 .nav-item.active { background: rgba(14,165,233,0.12); color: #0284c7; font-weight: 500; }
