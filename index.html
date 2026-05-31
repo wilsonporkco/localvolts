@@ -2511,9 +2511,11 @@ async function loadAemoForecast() {
 
     var nActual   = actuals.length;
     var nForecast = forecast.length;
+    var forecastErr = res.headers.get('X-Forecast-Error');
     var parts = [];
-    if (nActual)   parts.push(nActual   + ' actual intervals (OpenNEM)');
+    if (nActual)   parts.push(nActual   + ' actual intervals');
     if (nForecast) parts.push(nForecast + ' forecast intervals (AEMO P5)');
+    else if (forecastErr) parts.push('⚠ forecast error: ' + forecastErr);
     if (footerEl) footerEl.textContent = region + ' · ' + parts.join(' + ') + ' · wholesale spot only';
 
   } catch(e) {
@@ -3429,9 +3431,11 @@ async function checkLastSync() {
     }
   }
 
+  if (history.scrollRestoration) history.scrollRestoration = 'manual';
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() { init(); loadPinPrices(); });
+    document.addEventListener('DOMContentLoaded', function() { window.scrollTo(0,0); init(); loadPinPrices(); });
   } else {
+    window.scrollTo(0,0);
     init();
     loadPinPrices();
   }
