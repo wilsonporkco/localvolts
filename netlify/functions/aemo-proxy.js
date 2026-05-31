@@ -75,30 +75,46 @@ exports.handler = async function (event) {
     };
   }
 
-  // Parse response: data[] → each item has a history object with start, interval, data[]
-  try {
-    const items = (raw.data || []);
-    const priceItem = items.find(function(d) {
-      return d.metric === 'price' || d.data_type === 'price';
-    }) || items[0];
+  // Debug mode: return raw API response so we can inspect the structure
+  const debug = (event.queryStringParameters || {}).debug === '1';
+  if (debug) {
+    return { statusCode: 200, headers: hdrs, body: JSON.stringify(raw, null, 2) };
+  }
 
-    if (!priceItem || !priceItem.history) {
-      throw new Error('No price data in response');
+  // Parse response:
+  // raw.data → INetworkTimeSeries[]
+  //   .metric = "price"
+  //   .results → ITimeSeriesResult[]
+  //     .name = region code e.g. "QLD1"
+  //     .data = [[datetime_string, value|null], ...]
+  try {
+    const series = (raw.data || []);
+    const priceSeries = series.find(function(d) { return d.metric === 'price'; }) || series[0];
+
+    if (!priceSeries) {
+      throw new Error('No series in response. Top-level keys: ' + Object.keys(raw).join(','));
     }
 
-    const history  = priceItem.history;
-    const values   = history.data  || [];
-    const start    = new Date(history.start);
-    const intrvlMs = parseInterval(history.interval || '5m');
+    const results = priceSeries.results || [];
+    // Find matching region result, or fall back to first
+    const regionResult = results.find(function(r) {
+      return r.name && r.name.toUpperCase() === region;
+    }) || results[0];
 
-    const result = values.map(function(val, i) {
-      if (val === null || val === undefined) return null;
-      const dt = new Date(start.getTime() + i * intrvlMs);
-      const v  = parseFloat(val);
+    if (!regionResult || !Array.isArray(regionResult.data) || !regionResult.data.length) {
+      throw new Error('No result data for ' + region + '. Available: ' + results.map(function(r){ return r.name; }).join(','));
+    }
+
+    // data is array of [datetime_string, value|null] tuples
+    const result = regionResult.data.map(function(tuple) {
+      const dt  = tuple[0];
+      const val = tuple[1];
+      if (val === null || val === undefined || !dt) return null;
+      const v = parseFloat(val);
       if (isNaN(v)) return null;
       return {
         regionId:         region,
-        intervalDatetime: formatAEST(dt),
+        intervalDatetime: dt.replace('T', ' ').slice(0, 19),
         rrp:              +v.toFixed(2),
         rrpCkwh:          +(v / 10).toFixed(3),
         source:           'actual'
@@ -120,22 +136,3 @@ exports.handler = async function (event) {
   }
 };
 
-/* ── helpers ─────────────────────────────────────────────────────────── */
-function parseInterval(s) {
-  // e.g. "5m" → 300000 ms
-  const m = s.match(/^(\d+)([mhd])$/i);
-  if (!m) return 5 * 60 * 1000;
-  const n = parseInt(m[1]);
-  switch (m[2].toLowerCase()) {
-    case 'm': return n * 60 * 1000;
-    case 'h': return n * 60 * 60 * 1000;
-    case 'd': return n * 24 * 60 * 60 * 1000;
-    default:  return n * 60 * 1000;
-  }
-}
-
-function formatAEST(date) {
-  // Return datetime string in AEST (UTC+10), no timezone suffix
-  const aest = new Date(date.getTime() + 10 * 60 * 60 * 1000);
-  return aest.toISOString().slice(0, 19).replace('T', ' ');
-}
