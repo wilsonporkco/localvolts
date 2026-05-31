@@ -233,6 +233,12 @@ exports.handler = async function (event) {
   const actuals  = aRes.status === 'fulfilled' ? aRes.value : [];
   const forecast = fRes.status === 'fulfilled' ? fRes.value : [];
 
+  // Expose forecast error in response header so frontend can display it
+  if (fRes.status === 'rejected') {
+    cors['X-Forecast-Error'] = (fRes.reason?.message || 'unknown').slice(0, 500);
+    cors['Access-Control-Expose-Headers'] = 'X-Forecast-Error';
+  }
+
   if (!actuals.length && !forecast.length) {
     const msg = [
       aRes.status === 'rejected' ? 'actuals: '  + aRes.reason?.message : null,
