@@ -103,16 +103,49 @@ function parseMMS(csv, cat, tbl) {
   return rows;
 }
 
+/* ── NEMWeb P5 URL from current time (skip directory listing) ───────── */
+// P5 files publish every 5 min: PUBLIC_P5MIN_YYYYMMDDHHMI_YYYYMMDDHHMI.zip
+// Try current 5-min slot then fall back to previous two slots
+function p5CandidateUrls() {
+  const now  = new Date();
+  // NEMWeb uses AEST (UTC+10)
+  const aest = new Date(now.getTime() + 10 * 60 * 60 * 1000);
+  const urls = [];
+  for (let back = 0; back <= 2; back++) {
+    const t   = new Date(aest.getTime() - back * 5 * 60 * 1000);
+    const min = Math.floor(t.getUTCMinutes() / 5) * 5;
+    const pad = function(n){ return String(n).padStart(2,'0'); };
+    const dt  = '' + t.getUTCFullYear()
+      + pad(t.getUTCMonth()+1) + pad(t.getUTCDate())
+      + pad(t.getUTCHours()) + pad(min) + '00';
+    // NEMWeb filename: PUBLIC_P5MIN_{run_dt}_{file_dt}.zip — both datetimes are the same for P5
+    urls.push(NEMWEB + '/REPORTS/CURRENT/P5_Reports/PUBLIC_P5MIN_' + dt + '_' + dt + '.zip');
+  }
+  return urls;
+}
+
 /* ── NEMWeb P5: forecast ~1 hour ahead ──────────────────────────────── */
 async function fetchForecast(region) {
-  const htmlRes = await fetchWith(P5_DIR, { headers: { 'User-Agent': UA } }, 7000);
-  if (!htmlRes.ok) throw new Error('NEMWeb listing HTTP ' + htmlRes.status);
-  const html   = await htmlRes.text();
-  const zipUrl = resolveZipUrl(html, 'PUBLIC_P5MIN');
-  console.log('[aemo-proxy] P5 ZIP:', zipUrl);
+  // Try guessing URL from current time first (avoids directory listing round-trip)
+  const candidates = p5CandidateUrls();
+  let zipRes = null;
+  for (const url of candidates) {
+    try {
+      const r = await fetchWith(url, { headers: { 'User-Agent': UA } }, 14000);
+      if (r.ok) { zipRes = r; console.log('[aemo-proxy] P5 hit:', url); break; }
+    } catch(e) { /* try next */ }
+  }
 
-  const zipRes = await fetchWith(zipUrl, { headers: { 'User-Agent': UA } }, 16000);
-  if (!zipRes.ok) throw new Error('P5 ZIP HTTP ' + zipRes.status);
+  // Fall back to directory listing if none of the guesses worked
+  if (!zipRes) {
+    const htmlRes = await fetchWith(P5_DIR, { headers: { 'User-Agent': UA } }, 6000);
+    if (!htmlRes.ok) throw new Error('NEMWeb listing HTTP ' + htmlRes.status);
+    const zipUrl  = resolveZipUrl(await htmlRes.text(), 'PUBLIC_P5MIN');
+    zipRes        = await fetchWith(zipUrl, { headers: { 'User-Agent': UA } }, 14000);
+    if (!zipRes.ok) throw new Error('P5 ZIP HTTP ' + zipRes.status);
+    console.log('[aemo-proxy] P5 fallback listing:', zipUrl);
+  }
+
   const buf  = Buffer.from(await zipRes.arrayBuffer());
   const csv  = unzipFirst(buf);
   const rows = parseMMS(csv, 'P5MIN', 'REGIONSOLUTION');
