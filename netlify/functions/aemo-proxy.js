@@ -213,32 +213,42 @@ async function fetchPDForecast(region) {
   const htmlRes = await fetchWith(PD_DIR, { headers: { 'User-Agent': UA } }, 7000);
   if (!htmlRes.ok) throw new Error('NEMWeb Predispatch listing HTTP ' + htmlRes.status);
 
-  // Match the main predispatch regional solution file (not IS or constraint files)
   const zipUrl = resolveZipUrl(await htmlRes.text(), 'PUBLIC_PREDISPATCH_[0-9]');
   console.log('[aemo-proxy] Predispatch ZIP:', zipUrl);
 
-  const csv = await downloadAndUnzip(zipUrl, 10000);
+  const csv = await downloadAndUnzip(zipUrl, 12000);
 
-  const allRows = parseMMS(csv, 'PREDISPATCH', 'REGION_SOLUTION');
+  // Auto-discover available tables for debugging
+  const iLines = csv.split('\n').filter(l => l.startsWith('I,')).slice(0, 30);
+  const tables = [...new Set(iLines.map(l => { const p=l.split(','); return p[1]+','+p[2]; }))];
+  console.log('[aemo-proxy] PD tables:', tables.join(' | '));
+  fetchPDForecast._lastTables = tables.join(' | ');
+
+  // Try both naming conventions AEMO uses (REGION_SOLUTION vs REGIONSOLUTION)
+  let allRows = parseMMS(csv, 'PREDISPATCH', 'REGION_SOLUTION');
+  if (!allRows.length) allRows = parseMMS(csv, 'PREDISPATCH', 'REGIONSOLUTION');
+  if (!allRows.length) throw new Error('PD: no REGION_SOLUTION rows. Tables: ' + tables.join(' | '));
+
   const regions = [...new Set(allRows.map(r => r.REGIONID || '?'))];
   console.log('[aemo-proxy] PD rows=' + allRows.length + ' regions=[' + regions + ']');
 
-  // Only keep future intervals (interval datetime > now)
+  // Only keep future intervals within 13 hours
   const now = new Date();
   const clean = s => (s || '').replace(/["\s]/g, '').toUpperCase();
   return allRows
     .filter(r => clean(r.REGIONID) === clean(region))
     .map(r => {
       const v  = parseFloat(r.RRP || '');
-      const dt = (r.INTERVAL_DATETIME || r.DATETIME || '').replace(/\//g, '-');
+      const rawDt = r.INTERVAL_DATETIME || r.DATETIME || '';
+      const dt = rawDt.replace(/\//g, '-');
       if (isNaN(v) || !dt) return null;
-      // Skip if more than 13 hours ahead (safety cap)
       const ts = new Date(dt.replace(' ', 'T') + '+10:00');
       if (isNaN(ts) || ts < now || (ts - now) > 13 * 3600 * 1000) return null;
       return { regionId: region, intervalDatetime: dt.slice(0, 19),
                rrp: +v.toFixed(2), rrpCkwh: +(v / 10).toFixed(3), source: 'forecast' };
     }).filter(Boolean);
 }
+fetchPDForecast._lastTables = '';
 
 /* ── Netlify handler ────────────────────────────────────────────────── */
 exports.handler = async function (event) {
@@ -281,8 +291,11 @@ exports.handler = async function (event) {
     cors['X-Forecast-Error'] = forecastErrors.join(' | ').slice(0, 500);
   }
   cors['X-Forecast-Debug'] = [
-    'p5=' + p5Forecast.length, 'pd=' + pdForecast.length, 'act=' + actuals.length
-  ].join('|');
+    'p5=' + p5Forecast.length,
+    'pd=' + pdForecast.length,
+    'act=' + actuals.length,
+    fetchPDForecast._lastTables ? 'pdTbls=' + fetchPDForecast._lastTables.slice(0, 100) : ''
+  ].filter(Boolean).join('|');
 
   if (!actuals.length && !p5Forecast.length && !pdForecast.length) {
     const msg = [
