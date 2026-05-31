@@ -75,10 +75,12 @@ function parseMMS(csv, cat, tbl) {
   const rows = []; let cols = null;
   for (const line of csv.split('\n')) {
     const p = line.trim().split(',');
-    if      (p[0] === 'I' && p[1] === cat && p[2] === tbl) cols = p.slice(4);
-    else if (p[0] === 'D' && p[1] === cat && p[2] === tbl && cols) {
+    if (p[0] === 'I' && p[1] === cat && p[2] === tbl) {
+      // Strip quotes from header names too, not just values
+      cols = p.slice(4).map(h => h.replace(/"/g, '').trim());
+    } else if (p[0] === 'D' && p[1] === cat && p[2] === tbl && cols) {
       const row = {}, vals = p.slice(3);
-      cols.forEach((h, i) => { row[h.trim()] = (vals[i] || '').replace(/"/g, '').trim(); });
+      cols.forEach((h, i) => { row[h] = (vals[i] || '').replace(/"/g, '').trim(); });
       rows.push(row);
     }
   }
