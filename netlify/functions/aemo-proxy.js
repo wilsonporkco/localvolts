@@ -76,10 +76,10 @@ function parseMMS(csv, cat, tbl) {
   for (const line of csv.split('\n')) {
     const p = line.trim().split(',');
     if (p[0] === 'I' && p[1] === cat && p[2] === tbl) {
-      // Strip quotes from header names too, not just values
       cols = p.slice(4).map(h => h.replace(/"/g, '').trim());
     } else if (p[0] === 'D' && p[1] === cat && p[2] === tbl && cols) {
-      const row = {}, vals = p.slice(3);
+      // AEMO MMS D records also carry the version number at p[3] — use slice(4) like I records
+      const row = {}, vals = p.slice(4);
       cols.forEach((h, i) => { row[h] = (vals[i] || '').replace(/"/g, '').trim(); });
       rows.push(row);
     }
