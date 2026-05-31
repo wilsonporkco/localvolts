@@ -1086,7 +1086,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               <div style="display:flex;align-items:center;gap:8px;">
                 <div class="chart-legend">
                   <div class="chart-legend-item"><div class="legend-dot" style="background:#10b981;"></div>Actual</div>
-                  <div class="chart-legend-item"><div class="legend-dot" style="background:#38bdf8;border:1px dashed #38bdf8;"></div>P5 forecast</div>
+                  <div class="chart-legend-item"><div class="legend-dot" style="background:#38bdf8;border:1px dashed #38bdf8;"></div>Forecast</div>
                 </div>
                 <select id="aemo-region-select" onchange="loadAemoForecast()" style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;color:var(--text);font-family:var(--font);font-size:11px;padding:4px 8px;outline:none;">
                   <option value="QLD1">QLD</option>
@@ -1098,7 +1098,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                 <button class="btn btn-ghost" onclick="loadAemoForecast()" style="font-size:11px;padding:3px 10px;">↺</button>
               </div>
             </div>
-            <div class="chart-wrap" style="height:160px;"><canvas id="aemoChart" role="img" aria-label="AEMO spot price."></canvas></div>
+            <div class="chart-wrap" style="height:200px;"><canvas id="aemoChart" role="img" aria-label="AEMO spot price."></canvas></div>
             <div id="aemo-forecast-error" style="display:none;font-family:var(--mono);font-size:11px;color:var(--red);margin-top:6px;"></div>
             <div id="aemo-footer" style="font-size:10px;color:var(--text3);margin-top:4px;"></div>
           </div>
@@ -2463,7 +2463,7 @@ async function loadAemoForecast() {
             spanGaps: false
           },
           {
-            label: 'P5 Forecast (c/kWh)',
+            label: 'Forecast (c/kWh)',
             data: forecastData,
             borderColor: '#38bdf8',
             backgroundColor: 'rgba(56,189,248,0.06)',
@@ -2495,7 +2495,7 @@ async function loadAemoForecast() {
         },
         scales: {
           x: {
-            ticks: { font: { family: 'DM Mono', size: 9 }, color: '#9ca3af', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+            ticks: { font: { family: 'DM Mono', size: 9 }, color: '#9ca3af', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
             grid: { color: 'rgba(0,0,0,0.04)' }
           },
           y: {
@@ -2514,8 +2514,8 @@ async function loadAemoForecast() {
     var forecastErr  = res.headers.get('X-Forecast-Error');
     var forecastDbg  = res.headers.get('X-Forecast-Debug');
     var parts = [];
-    if (nActual)        parts.push(nActual + ' actual intervals');
-    if (nForecast)      parts.push(nForecast + ' forecast intervals (AEMO P5)');
+    if (nActual)   parts.push(nActual + ' actual (12h)');
+    if (nForecast) parts.push(nForecast + ' forecast (12h ahead)');
     else if (forecastErr) parts.push('⚠ forecast error: ' + forecastErr);
     else if (forecastDbg) parts.push('⚠ no forecast — ' + forecastDbg);
     if (footerEl) footerEl.textContent = region + ' · ' + parts.join(' + ') + ' · wholesale spot only';
