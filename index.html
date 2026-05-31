@@ -1046,7 +1046,6 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="detail-card"><div class="detail-title">Energy</div><div id="energy-rows"></div></div>
             <div class="detail-card"><div class="detail-title">Financials</div><div id="financial-rows"></div></div>
             <div class="detail-card"><div class="detail-title">Flex signals</div><div id="flex-rows"></div></div>
-            <div class="detail-card"><div class="detail-title">Emissions</div><div id="emissions-rows"></div></div>
           </div>
           <div class="chart-card">
             <div class="chart-title">
@@ -1067,6 +1066,23 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               </div>
             </div>
             <div class="chart-wrap" style="height:150px;"><canvas id="liveRateChart" role="img" aria-label="24hr price forecast.">Price forecast.</canvas></div>
+          </div>
+          <div class="chart-card" id="aemo-forecast-card">
+            <div class="chart-title" style="margin-bottom:10px;">
+              <span>AEMO 5-min dispatch forecast</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <select id="aemo-region-select" onchange="loadAemoForecast()" style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;color:var(--text);font-family:var(--font);font-size:11px;padding:4px 8px;outline:none;">
+                  <option value="QLD1">QLD</option>
+                  <option value="NSW1">NSW</option>
+                  <option value="VIC1">VIC</option>
+                  <option value="SA1">SA</option>
+                  <option value="TAS1">TAS</option>
+                </select>
+                <button class="btn btn-ghost" onclick="loadAemoForecast()" style="font-size:11px;padding:3px 10px;">↺</button>
+              </div>
+            </div>
+            <div id="aemo-forecast-rows" style="font-family:var(--mono);font-size:12px;"></div>
+            <div id="aemo-forecast-error" style="display:none;font-family:var(--mono);font-size:11px;color:var(--red);margin-top:6px;"></div>
           </div>
           <div class="chart-card" id="live-debug-card" style="display:none;">
             <div class="chart-title" style="margin-bottom:6px;">
@@ -1183,7 +1199,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="collapsible-body" id="weekly-table-body" style="max-height:0;overflow:hidden;">
               <div style="overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
-                  <thead><tr><th>Day</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs ($)</th><th class="num">Earnings ($)</th><th class="num">Net ($)</th><th class="num">Emissions (g)</th></tr></thead>
+                  <thead><tr><th>Day</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs ($)</th><th class="num">Earnings ($)</th><th class="num">Net ($)</th></tr></thead>
                   <tbody id="weekly-tbody"></tbody>
                 </table>
               </div>
@@ -1234,7 +1250,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="collapsible-body" id="monthly-table-body" style="max-height:0;overflow:hidden;">
               <div style="overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;">
                 <table class="data-table">
-                  <thead><tr><th>Date</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs ($)</th><th class="num">Earnings ($)</th><th class="num">Net ($)</th><th class="num">Emissions (g)</th></tr></thead>
+                  <thead><tr><th>Date</th><th class="num">Import (kWh)</th><th class="num">Export (kWh)</th><th class="num">Costs ($)</th><th class="num">Earnings ($)</th><th class="num">Net ($)</th></tr></thead>
                   <tbody id="monthly-tbody"></tbody>
                 </table>
               </div>
@@ -2300,11 +2316,8 @@ async function loadLive() {
       dRow('Cost flex up', fmt(d.costsFlexUp,4), 'c/kWh') +
       dRow('Cost flex down', fmt(d.costsFlexDown,4), 'c/kWh');
 
-    document.getElementById('emissions-rows').innerHTML =
-      dRow('Import emissions', toGrams(d.importsAllEmissions,d.importsAllEmissionsUnits).toFixed(0), 'g CO2e') +
-      dRow('Export emissions', toGrams(d.exportsAllEmissions,d.exportsAllEmissionsUnits).toFixed(0), 'g CO2e') +
-      dRow('Import zero-EE', fmt(d.importsAllZeroEE,1), '%') +
-      dRow('Export zero-EE', fmt(d.exportsAllZeroEE,1), '%');
+    // AEMO forecast loads separately
+    loadAemoForecast();
 
     // For chart: if multiple NMIs, use first NMI's data for 24hr view (288 intervals)
     var nmiKeys=[...new Set(data.map(function(r){return r.NMI;}))];
@@ -2351,6 +2364,72 @@ async function loadLive() {
     document.getElementById('live-loading').style.display='none';
     showErr('live-error', err.message);
     setTxt('live-status-text','Error');
+  }
+}
+
+async function loadAemoForecast() {
+  var container = document.getElementById('aemo-forecast-rows');
+  var errEl     = document.getElementById('aemo-forecast-error');
+  var sel       = document.getElementById('aemo-region-select');
+  var region    = sel ? sel.value : 'QLD1';
+  if (!container) return;
+  container.innerHTML = '<span style="color:var(--text3);">Loading…</span>';
+  if (errEl) errEl.style.display = 'none';
+
+  try {
+    var res  = await fetch('/.netlify/functions/aemo-proxy?region=' + encodeURIComponent(region));
+    var rawText = await res.text();
+    var data;
+    try { data = JSON.parse(rawText); } catch(e) {
+      throw new Error('Invalid response from AEMO proxy');
+    }
+    if (!res.ok) throw new Error(data.error || 'AEMO proxy error ' + res.status);
+    if (!Array.isArray(data) || !data.length) throw new Error('No AEMO forecast data available');
+
+    // Show next 12 intervals (60 min) — skip any in the past
+    var now   = Date.now();
+    var rows  = data.slice(0, 12);
+    var minRRP = Math.min.apply(null, rows.map(function(r){ return r.rrp; }));
+    var maxRRP = Math.max.apply(null, rows.map(function(r){ return r.rrp; }));
+    var span   = maxRRP - minRRP || 1;
+
+    var html = '<table style="width:100%;border-collapse:collapse;">';
+    html += '<tr style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;">';
+    html += '<th style="text-align:left;padding:3px 0;">Time (AEST)</th>';
+    html += '<th style="text-align:right;padding:3px 0;">$/MWh</th>';
+    html += '<th style="text-align:right;padding:3px 0;">c/kWh</th>';
+    html += '<th style="text-align:left;padding:3px 8px;width:100px;"></th>';
+    html += '</tr>';
+
+    rows.forEach(function(r) {
+      // Parse AEMO datetime (format: "2024/01/15 10:05:00" or "2024-01-15 10:05:00")
+      var dtStr  = (r.intervalDatetime || '').replace('/', '-').replace('/', '-');
+      var dtUTC  = new Date(dtStr.replace(' ', 'T') + '+10:00'); // AEST
+      var timeStr = isNaN(dtUTC) ? r.intervalDatetime : dtUTC.toLocaleTimeString('en-AU', { hour:'2-digit', minute:'2-digit' });
+
+      var rrp    = r.rrp;
+      var ckwh   = r.rrpCkwh;
+      // Colour: green if cheap (<5 c/kWh), amber if moderate, red if expensive or negative
+      var color  = rrp < 0 ? '#8b5cf6' : ckwh < 5 ? '#10b981' : ckwh < 20 ? 'var(--text)' : ckwh < 50 ? '#f59e0b' : '#ef4444';
+      var barPct = Math.max(2, Math.round(((rrp - minRRP) / span) * 100));
+
+      html += '<tr style="border-top:1px solid rgba(255,255,255,0.04);">';
+      html += '<td style="padding:4px 0;font-size:11px;color:var(--text2);">' + timeStr + '</td>';
+      html += '<td style="padding:4px 0;text-align:right;font-size:11px;color:' + color + ';">' + rrp.toFixed(2) + '</td>';
+      html += '<td style="padding:4px 0;text-align:right;font-size:12px;font-weight:600;color:' + color + ';">' + ckwh.toFixed(2) + ' c</td>';
+      html += '<td style="padding:4px 8px;">';
+      html += '<div style="background:rgba(255,255,255,0.07);border-radius:3px;height:6px;overflow:hidden;">';
+      html += '<div style="background:' + color + ';width:' + barPct + '%;height:100%;border-radius:3px;transition:width 0.3s;"></div>';
+      html += '</div></td>';
+      html += '</tr>';
+    });
+    html += '</table>';
+    html += '<div style="font-size:10px;color:var(--text3);margin-top:6px;">AEMO 5-min pre-dispatch · ' + region + ' · wholesale spot only (excl. network & retailer charges)</div>';
+    container.innerHTML = html;
+
+  } catch(e) {
+    container.innerHTML = '';
+    if (errEl) { errEl.textContent = 'AEMO forecast unavailable: ' + e.message; errEl.style.display = 'block'; }
   }
 }
 
@@ -2401,8 +2480,8 @@ async function loadDaily() {
     });
 
     csvData.daily=filtered;
-    var tImp=0,tExp=0,tCost=0,tEarn=0,tEmit=0;
-    filtered.forEach(function(r){ tImp+=parseFloat(r.imports_kwh)||0; tExp+=parseFloat(r.exports_kwh)||0; tCost+=parseFloat(r.costs_cents)||0; tEarn+=parseFloat(r.earnings_cents)||0; tEmit+=parseFloat(r.imports_emissions_g)||0; });
+    var tImp=0,tExp=0,tCost=0,tEarn=0;
+    filtered.forEach(function(r){ tImp+=parseFloat(r.imports_kwh)||0; tExp+=parseFloat(r.exports_kwh)||0; tCost+=parseFloat(r.costs_cents)||0; tEarn+=parseFloat(r.earnings_cents)||0; });
     var net=tEarn-tCost;
 
     // Show warning banner when data is estimated or forecast
@@ -2419,7 +2498,7 @@ async function loadDaily() {
       {label:'Grid import', value: tImp.toFixed(2), sub: 'kWh from '+fromTime+' to '+toTime},
       {label:'Solar export', value: tExp.toFixed(2), sub: 'kWh exported to grid'},
       {label:'Net cost', value: '$'+((tCost-tEarn)/100).toFixed(2), sub: 'AUD (costs − earnings)'},
-      {label:'CO2 emissions', value: (tEmit/1000).toFixed(2), sub: 'kg from grid imports'}
+      {label:'Avg cost rate', value: tImp>0?((tCost/tImp)/100*100).toFixed(2):'—', sub: 'c/kWh average'}
     ]);
 
     var netCostDollars = (tCost - tEarn) / 100;
@@ -2477,12 +2556,11 @@ function aggregateDays(rows) {
   rows.forEach(function(r){
     if(!r.interval_end) return;
     var day=isoDate(toAEST(new Date(r.interval_end)));
-    if(!dm[day]) dm[day]={imports:0,exports:0,costs:0,earnings:0,emissions:0};
+    if(!dm[day]) dm[day]={imports:0,exports:0,costs:0,earnings:0};
     dm[day].imports  +=parseFloat(r.imports_kwh)||0;
     dm[day].exports  +=parseFloat(r.exports_kwh)||0;
     dm[day].costs    +=parseFloat(r.costs_cents)||0;
     dm[day].earnings +=parseFloat(r.earnings_cents)||0;
-    dm[day].emissions+=parseFloat(r.imports_emissions_g)||0;
   });
   return dm;
 }
@@ -2504,20 +2582,20 @@ function dayTableRows(days,dm) {
     var r=dm[d]; var net=r.earnings-r.costs; var nc=net>=0?'pos':'neg';
     return '<tr><td>'+d+'</td><td class="num">'+r.imports.toFixed(2)+'</td><td class="num">'+r.exports.toFixed(2)+'</td>'+
       '<td class="num">$'+(r.costs/100).toFixed(2)+'</td><td class="num">$'+(r.earnings/100).toFixed(2)+'</td>'+
-      '<td class="num '+nc+'">'+(net>=0?'+$':'-$')+(Math.abs(net)/100).toFixed(2)+'</td><td class="num">'+r.emissions.toFixed(0)+'</td></tr>';
+      '<td class="num '+nc+'">'+(net>=0?'+$':'-$')+(Math.abs(net)/100).toFixed(2)+'</td></tr>';
   }).join('');
 }
 
 function periodSummary(days,dm,periodLabel) {
-  var tI=0,tE=0,tC=0,tEr=0,tEm=0;
-  days.forEach(function(d){tI+=dm[d].imports;tE+=dm[d].exports;tC+=dm[d].costs;tEr+=dm[d].earnings;tEm+=dm[d].emissions;});
+  var tI=0,tE=0,tC=0,tEr=0;
+  days.forEach(function(d){tI+=dm[d].imports;tE+=dm[d].exports;tC+=dm[d].costs;tEr+=dm[d].earnings;});
   var netCostDollars=((tC-tEr)/100); var avgC=tI>0?(tC/tI):0;
-  return {tI:tI,tE:tE,tC:tC,tEr:tEr,tEm:tEm,
+  return {tI:tI,tE:tE,tC:tC,tEr:tEr,
     summaryHtml: summaryBox([
       {label:'Grid import', value:tI.toFixed(2), sub:'kWh total'},
       {label:'Solar export', value:tE.toFixed(2), sub:'kWh total'},
       {label:'Net cost', value:'$'+netCostDollars.toFixed(2), sub:'AUD (costs − earnings) for '+periodLabel},
-      {label:'CO2 emissions', value:(tEm/1000).toFixed(2), sub:'kg from imports'}
+      {label:'Avg cost rate', value:tI>0?(tC/tI).toFixed(2):'—', sub:'c/kWh average'}
     ]),
     metricsHtml: mCard('Total import',tI.toFixed(2),'kWh','')+mCard('Total export',tE.toFixed(2),'kWh','green')+
       mCard('Net cost','$'+netCostDollars.toFixed(2),'AUD','red')+mCard('Avg cost',(tI>0?(tC/tI):0).toFixed(1),'c / kWh','amber')+
