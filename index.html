@@ -39,7 +39,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
 /* Layout */
 .app { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
-.sidebar { background: #1e293b; border-right: none; padding: 20px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+.sidebar { background: #1e293b; border-right: none; padding: 20px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
 .main { overflow: hidden; }
 
 /* Sidebar */
@@ -1264,9 +1264,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
           <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="saveAccounts()">Save accounts</button>
             <button class="btn btn-ghost" onclick="discoverNMIsFromAPI()">Discover NMIs</button>
-            <button class="btn btn-ghost" onclick="syncNow()">↕ Sync now</button>
+            <button class="btn btn-ghost" onclick="syncNow()">↕ Sync settings</button>
+            <button class="btn btn-ghost" id="backfill-btn" onclick="triggerBackfill()" title="Fetch up to 72h of historical data for all accounts now">⬇ Backfill data</button>
             <span id="accounts-confirm" style="font-family:var(--mono);font-size:11px;color:var(--green);display:none;">Saved</span>
             <span id="nmi-discover-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);display:none;"></span>
+            <span id="backfill-status" style="font-family:var(--mono);font-size:11px;display:none;"></span>
           </div>
           <div class="settings-hint" style="margin-top:10px;">Active account:&nbsp;
             <select id="active-account-select" class="settings-input" style="width:auto;display:inline-block;" onchange="setActiveAccount(this.value)"></select>
@@ -1791,6 +1793,31 @@ async function syncNow() {
   await syncSettingsFromSupabase(true);
   renderAccountRows();
   renderSettingsNMIs();
+  triggerBackfill();
+}
+
+async function triggerBackfill() {
+  var btn    = document.getElementById('backfill-btn');
+  var status = document.getElementById('backfill-status');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Triggering…'; }
+  if (status) { status.style.display = 'none'; }
+  try {
+    var res  = await fetch('/.netlify/functions/trigger-backfill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hours_back: 72 })
+    });
+    var data = await res.json();
+    if (res.ok && data.ok) {
+      if (status) { status.textContent = '✓ ' + data.message; status.style.color = 'var(--green)'; status.style.display = 'inline'; }
+    } else {
+      if (status) { status.textContent = '✗ ' + (data.error || 'Failed — check GITHUB_TOKEN env var'); status.style.color = 'var(--red)'; status.style.display = 'inline'; }
+    }
+  } catch (e) {
+    if (status) { status.textContent = '✗ ' + e.message; status.style.color = 'var(--red)'; status.style.display = 'inline'; }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '⬇ Backfill data'; }
+  setTimeout(function() { if (status) status.style.display = 'none'; }, 8000);
 }
 
 function saveSupabase() {
