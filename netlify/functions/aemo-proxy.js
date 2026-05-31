@@ -1,96 +1,20 @@
 /**
  * aemo-proxy.js — Netlify function
  *
- * Fetches NEM spot prices from AEMO NEMWeb public ZIP files.
- * Fetches P5_Reports only (one ZIP = fastest path, avoids timeout).
- * The P5 pre-dispatch runs every 5 min and covers now + ~1 hour ahead.
- * The first interval in the file is the "current" price; the rest are forecast.
+ * Fetches 5-minute NEM spot prices via the OpenElectricity REST API.
+ * Returns the last 2 hours of settled dispatch prices for a region.
+ *
+ * Requires env var: OPENELEC_API_KEY
+ * Get a free key at: https://platform.openelectricity.org.au
  *
  * GET /.netlify/functions/aemo-proxy?region=QLD1
  * Returns JSON array: [{ regionId, intervalDatetime, rrp, rrpCkwh, source }]
- *   source: "actual" (current interval) | "forecast" (future intervals)
- *
- * No API key required. ZIP extraction uses native Node zlib.
  */
 
 'use strict';
 
-const zlib = require('node:zlib');
+const API_BASE = 'https://api.openelectricity.org.au/v4';
 
-const NEMWEB  = 'https://www.nemweb.com.au';
-const P5_DIR  = NEMWEB + '/REPORTS/CURRENT/P5_Reports/';
-
-const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
-
-/* ── fetch with timeout ─────────────────────────────────────────────── */
-async function get(url, asBuffer, timeoutMs) {
-  const ctrl = new AbortController();
-  const tid  = setTimeout(() => ctrl.abort(), timeoutMs || 10000);
-  try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { 'User-Agent': BROWSER_UA, 'Accept': asBuffer ? '*/*' : 'text/html,*/*' }
-    });
-    clearTimeout(tid);
-    if (!res.ok) throw new Error('HTTP ' + res.status + ' from ' + url);
-    return asBuffer ? Buffer.from(await res.arrayBuffer()) : await res.text();
-  } catch (e) { clearTimeout(tid); throw e; }
-}
-
-/* ── resolve latest ZIP URL from NEMWeb directory listing ───────────── */
-// NEMWeb hrefs are absolute paths: /REPORTS/CURRENT/P5_Reports/file.zip
-function resolveZipUrl(html, pattern) {
-  const re   = new RegExp('href="([^"]*' + pattern + '[^"]*\\.zip)"', 'gi');
-  const hits = [];
-  let m;
-  while ((m = re.exec(html)) !== null) hits.push(m[1]);
-  if (!hits.length) throw new Error('No matching ZIP found in NEMWeb directory listing');
-  hits.sort();
-  const path = hits[hits.length - 1];
-  return path.startsWith('http') ? path : NEMWEB + (path.startsWith('/') ? path : '/' + path);
-}
-
-/* ── ZIP extraction (native zlib, no npm) ───────────────────────────── */
-function unzipFirst(buf) {
-  const SIG  = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-  const off  = buf.indexOf(SIG);
-  if (off === -1) throw new Error('Not a valid ZIP file');
-  const method = buf.readUInt16LE(off + 8);
-  const fnLen  = buf.readUInt16LE(off + 26);
-  const exLen  = buf.readUInt16LE(off + 28);
-  const start  = off + 30 + fnLen + exLen;
-  let   cSize  = buf.readUInt32LE(off + 18);
-  if (cSize === 0) {
-    const next = buf.indexOf(SIG, start);
-    cSize = (next === -1 ? buf.length : next) - start;
-  }
-  const data = buf.slice(start, start + cSize);
-  if (method === 0) return data.toString('utf8');
-  if (method === 8) return zlib.inflateRawSync(data).toString('utf8');
-  throw new Error('Unsupported ZIP compression method ' + method);
-}
-
-/* ── AEMO MMS CSV parser ────────────────────────────────────────────── */
-// I,CATEGORY,TABLE,VERSION,col1,col2,...  ← header row
-// D,CATEGORY,TABLE,val1,val2,...          ← data row
-function parseMMS(csv, category, table) {
-  const rows = [];
-  let   cols = null;
-  for (const raw of csv.split('\n')) {
-    const p = raw.trim().split(',');
-    if (p[0] === 'I' && p[1] === category && p[2] === table) {
-      cols = p.slice(4);
-    } else if (p[0] === 'D' && p[1] === category && p[2] === table && cols) {
-      const vals = p.slice(3);
-      const row  = {};
-      cols.forEach((h, i) => { row[h.trim()] = (vals[i] || '').replace(/"/g, '').trim(); });
-      rows.push(row);
-    }
-  }
-  return rows;
-}
-
-/* ── handler ────────────────────────────────────────────────────────── */
 exports.handler = async function (event) {
   const hdrs = {
     'Access-Control-Allow-Origin':  '*',
@@ -100,52 +24,118 @@ exports.handler = async function (event) {
   };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: hdrs, body: '' };
 
-  const region = ((event.queryStringParameters || {}).region || 'QLD1').toUpperCase();
-
-  try {
-    // Step 1: get directory listing (~5 KB HTML, fast)
-    const html   = await get(P5_DIR, false, 8000);
-    const zipUrl = resolveZipUrl(html, 'PUBLIC_P5MIN');
-    console.log('[aemo-proxy] P5 ZIP:', zipUrl);
-
-    // Step 2: download + decompress ZIP (~200-500 KB)
-    const buf = await get(zipUrl, true, 18000);
-    const csv = unzipFirst(buf);
-
-    // Step 3: parse MMS CSV
-    const rows = parseMMS(csv, 'P5MIN', 'REGIONSOLUTION');
-    const filtered = rows.filter(r => r.REGIONID === region);
-
-    if (!filtered.length) {
-      return { statusCode: 502, headers: hdrs, body: JSON.stringify({ error: 'No data for region ' + region }) };
-    }
-
-    // Sort by interval datetime ascending
-    filtered.sort((a, b) => a.INTERVAL_DATETIME < b.INTERVAL_DATETIME ? -1 : 1);
-
-    // Label first interval as "actual" (current dispatch period), rest as "forecast"
-    const result = filtered.map((r, i) => {
-      const v = parseFloat(r.RRP);
-      if (isNaN(v)) return null;
-      return {
-        regionId:          region,
-        intervalDatetime:  r.INTERVAL_DATETIME,
-        rrp:               +v.toFixed(2),
-        rrpCkwh:           +(v / 10).toFixed(3),
-        source:            i === 0 ? 'actual' : 'forecast'
-      };
-    }).filter(Boolean);
-
-    console.log('[aemo-proxy] ' + region + ': ' + result.length + ' intervals (1 actual + ' + (result.length - 1) + ' forecast)');
-    return { statusCode: 200, headers: hdrs, body: JSON.stringify(result) };
-
-  } catch (err) {
-    console.error('[aemo-proxy] error:', err.message);
-    const isTimeout = err.name === 'AbortError' || err.message.includes('abort');
+  const apiKey = process.env.OPENELEC_API_KEY;
+  if (!apiKey) {
     return {
       statusCode: 502,
       headers: hdrs,
-      body: JSON.stringify({ error: isTimeout ? 'NEMWeb request timed out' : err.message })
+      body: JSON.stringify({ error: 'OPENELEC_API_KEY not set — add it in Netlify environment variables' })
+    };
+  }
+
+  const region = ((event.queryStringParameters || {}).region || 'QLD1').toUpperCase();
+
+  // Fetch last 2 hours of 5-min price data
+  const now       = new Date();
+  const twoHrsAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+  const dateStart = twoHrsAgo.toISOString().slice(0, 19); // drop ms
+
+  const url = `${API_BASE}/market/network/NEM`
+    + `?metrics=price`
+    + `&interval=5m`
+    + `&network_region=${encodeURIComponent(region)}`
+    + `&primary_grouping=network_region`
+    + `&date_start=${encodeURIComponent(dateStart)}`;
+
+  console.log('[aemo-proxy] GET', url);
+
+  let raw;
+  try {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), 10000);
+    const res  = await fetch(url, {
+      signal:  ctrl.signal,
+      headers: {
+        'Authorization': 'Bearer ' + apiKey,
+        'Accept':        'application/json'
+      }
+    });
+    clearTimeout(tid);
+    raw = await res.json();
+    if (!res.ok) {
+      const msg = (raw && raw.error) ? JSON.stringify(raw.error) : 'HTTP ' + res.status;
+      throw new Error(msg);
+    }
+  } catch (err) {
+    console.error('[aemo-proxy] fetch error:', err.message);
+    return {
+      statusCode: 502,
+      headers: hdrs,
+      body: JSON.stringify({ error: err.message || 'OpenElectricity request failed' })
+    };
+  }
+
+  // Parse response: data[] → each item has a history object with start, interval, data[]
+  try {
+    const items = (raw.data || []);
+    const priceItem = items.find(function(d) {
+      return d.metric === 'price' || d.data_type === 'price';
+    }) || items[0];
+
+    if (!priceItem || !priceItem.history) {
+      throw new Error('No price data in response');
+    }
+
+    const history  = priceItem.history;
+    const values   = history.data  || [];
+    const start    = new Date(history.start);
+    const intrvlMs = parseInterval(history.interval || '5m');
+
+    const result = values.map(function(val, i) {
+      if (val === null || val === undefined) return null;
+      const dt = new Date(start.getTime() + i * intrvlMs);
+      const v  = parseFloat(val);
+      if (isNaN(v)) return null;
+      return {
+        regionId:         region,
+        intervalDatetime: formatAEST(dt),
+        rrp:              +v.toFixed(2),
+        rrpCkwh:          +(v / 10).toFixed(3),
+        source:           'actual'
+      };
+    }).filter(Boolean);
+
+    if (!result.length) throw new Error('Empty price series for ' + region);
+
+    console.log('[aemo-proxy] ' + region + ': ' + result.length + ' intervals');
+    return { statusCode: 200, headers: hdrs, body: JSON.stringify(result) };
+
+  } catch (err) {
+    console.error('[aemo-proxy] parse error:', err.message);
+    return {
+      statusCode: 502,
+      headers: hdrs,
+      body: JSON.stringify({ error: 'Parse error: ' + err.message })
     };
   }
 };
+
+/* ── helpers ─────────────────────────────────────────────────────────── */
+function parseInterval(s) {
+  // e.g. "5m" → 300000 ms
+  const m = s.match(/^(\d+)([mhd])$/i);
+  if (!m) return 5 * 60 * 1000;
+  const n = parseInt(m[1]);
+  switch (m[2].toLowerCase()) {
+    case 'm': return n * 60 * 1000;
+    case 'h': return n * 60 * 60 * 1000;
+    case 'd': return n * 24 * 60 * 60 * 1000;
+    default:  return n * 60 * 1000;
+  }
+}
+
+function formatAEST(date) {
+  // Return datetime string in AEST (UTC+10), no timezone suffix
+  const aest = new Date(date.getTime() + 10 * 60 * 60 * 1000);
+  return aest.toISOString().slice(0, 19).replace('T', ' ');
+}
