@@ -1,210 +1,164 @@
 /**
  * aemo-proxy.js — Netlify function
  *
- * Returns NEM spot prices for a region combining:
- *   • OpenNEM  — last ~12 actual settled prices (historical)
- *   • AEMO P5  — next ~12 pre-dispatch forecast prices (NEMWeb ZIP)
+ * Fetches NEM spot prices from AEMO NEMWeb public ZIP files.
+ * Both endpoints are on www.nemweb.com.au which is reachable from Netlify.
+ *
+ *   Actuals  → DispatchIS_Reports  (latest settled 5-min dispatch price)
+ *   Forecast → P5_Reports          (P5 pre-dispatch, ~1 hour ahead, every 5 min)
  *
  * GET /.netlify/functions/aemo-proxy?region=QLD1
- *
- * Returns JSON array sorted by time:
- *   [{ regionId, intervalDatetime, rrp, rrpCkwh, source }]
+ * Returns JSON array: [{ regionId, intervalDatetime, rrp, rrpCkwh, source }]
  *   source: "actual" | "forecast"
  *
- * No API key required.
+ * No API key required. ZIP extraction uses native Node zlib.
  */
 
 'use strict';
 
 const zlib = require('node:zlib');
 
-/* ── helpers ─────────────────────────────────────────────────────────── */
-function pad(n) { return String(n).padStart(2, '0'); }
+const NEMWEB      = 'https://www.nemweb.com.au';
+const P5_DIR      = NEMWEB + '/REPORTS/CURRENT/P5_Reports/';
+const DISPATCH_DIR = NEMWEB + '/REPORTS/CURRENT/DispatchIS_Reports/';
 
-function aestDatetimeStr(utcMs) {
-  const d = new Date(utcMs + 10 * 60 * 60 * 1000);
-  return `${d.getUTCFullYear()}/${pad(d.getUTCMonth()+1)}/${pad(d.getUTCDate())} `
-       + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
-}
+/* ── fetch helpers ───────────────────────────────────────────────────── */
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-function makeRow(region, datetimeStr, rrp, source) {
-  const v = parseFloat(rrp);
-  if (isNaN(v)) return null;
-  return {
-    regionId:         region,
-    intervalDatetime: datetimeStr,
-    rrp:              parseFloat(v.toFixed(2)),
-    rrpCkwh:          parseFloat((v / 10).toFixed(3)),
-    source
-  };
-}
-
-async function timedFetch(url, opts, ms) {
+async function get(url, asBuffer, timeoutMs) {
   const ctrl = new AbortController();
-  const tid  = setTimeout(() => ctrl.abort(), ms);
+  const tid  = setTimeout(() => ctrl.abort(), timeoutMs || 20000);
   try {
-    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': BROWSER_UA, 'Accept': asBuffer ? '*/*' : 'text/html,*/*' }
+    });
     clearTimeout(tid);
-    return r;
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' from ' + url);
+    return asBuffer ? Buffer.from(await res.arrayBuffer()) : await res.text();
   } catch (e) { clearTimeout(tid); throw e; }
 }
 
-/* ── ZIP extraction (native zlib, no npm) ─────────────────────────────── */
-function extractFirstFileFromZip(buf) {
-  const SIG = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-  const off  = buf.indexOf(SIG);
-  if (off === -1) throw new Error('Not a ZIP');
-  const method      = buf.readUInt16LE(off + 8);
-  const fnLen       = buf.readUInt16LE(off + 26);
-  const exLen       = buf.readUInt16LE(off + 28);
-  const dataStart   = off + 30 + fnLen + exLen;
-  let   compSize    = buf.readUInt32LE(off + 18);
-  if (compSize === 0) {
-    const next = buf.indexOf(SIG, dataStart);
-    compSize   = (next === -1 ? buf.length : next) - dataStart;
-  }
-  const compressed = buf.slice(dataStart, dataStart + compSize);
-  if (method === 0) return compressed.toString('utf8');
-  if (method === 8) return zlib.inflateRawSync(compressed).toString('utf8');
-  throw new Error('Unsupported ZIP compression: ' + method);
+/* ── resolve ZIP URL from directory listing ─────────────────────────── */
+// hrefs in NEMWEB listings are absolute paths: /REPORTS/CURRENT/.../file.zip
+function resolveZipUrl(html, pattern) {
+  const re   = new RegExp('href="([^"]*' + pattern + '[^"]*\\.zip)"', 'gi');
+  const hits = [];
+  let m;
+  while ((m = re.exec(html)) !== null) hits.push(m[1]);
+  if (!hits.length) throw new Error('No matching ZIP in directory listing');
+  hits.sort();
+  const path = hits[hits.length - 1]; // latest = last alphabetically
+  return path.startsWith('http') ? path : NEMWEB + (path.startsWith('/') ? path : '/' + path);
 }
 
-/* ── AEMO MMS CSV parser ──────────────────────────────────────────────── */
-// Format: I,CATEGORY,TABLE,VERSION,col1,col2,...   (header)
-//         D,CATEGORY,TABLE,val1,val2,...            (data)
-function parseAEMOCsv(csv, category, table) {
-  const lines   = csv.split('\n');
-  let   headers = null;
-  const rows    = [];
-  for (const line of lines) {
-    const p = line.trim().split(',');
+/* ── ZIP extraction (native zlib, no npm) ────────────────────────────── */
+function unzipFirst(buf) {
+  const SIG = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  const off  = buf.indexOf(SIG);
+  if (off === -1) throw new Error('Not a valid ZIP file');
+  const method   = buf.readUInt16LE(off + 8);
+  const fnLen    = buf.readUInt16LE(off + 26);
+  const exLen    = buf.readUInt16LE(off + 28);
+  const start    = off + 30 + fnLen + exLen;
+  let   cSize    = buf.readUInt32LE(off + 18);
+  if (cSize === 0) {
+    const next = buf.indexOf(SIG, start);
+    cSize = (next === -1 ? buf.length : next) - start;
+  }
+  const data = buf.slice(start, start + cSize);
+  if (method === 0) return data.toString('utf8');
+  if (method === 8) return zlib.inflateRawSync(data).toString('utf8');
+  throw new Error('Unsupported ZIP compression method ' + method);
+}
+
+/* ── AEMO MMS CSV parser ─────────────────────────────────────────────── */
+// I,CATEGORY,TABLE,VERSION,col1,col2,...   ← header
+// D,CATEGORY,TABLE,val1,val2,...           ← data
+function parseMMS(csv, category, table) {
+  const rows = [];
+  let   cols = null;
+  for (const raw of csv.split('\n')) {
+    const p = raw.trim().split(',');
     if (p[0] === 'I' && p[1] === category && p[2] === table) {
-      headers = p.slice(4); // skip I,CAT,TABLE,VERSION
-    } else if (p[0] === 'D' && p[1] === category && p[2] === table && headers) {
+      cols = p.slice(4); // skip I,CAT,TABLE,VERSION
+    } else if (p[0] === 'D' && p[1] === category && p[2] === table && cols) {
       const vals = p.slice(3);
       const row  = {};
-      headers.forEach((h, i) => { row[h.trim()] = (vals[i] || '').replace(/"/g, '').trim(); });
+      cols.forEach((h, i) => { row[h.trim()] = (vals[i] || '').replace(/"/g, '').trim(); });
       rows.push(row);
     }
   }
   return rows;
 }
 
-/* ── Source 1: OpenNEM actuals ─────────────────────────────────────────── */
-async function fetchActuals(region) {
-  const urls = [
-    `https://api.opennem.org.au/v3/stats/price/network/NEM/${region}/`,
-    `https://api.opennem.org.au/stats/price/network/NEM/${region}/`
-  ];
-  for (const url of urls) {
-    try {
-      const res = await timedFetch(url, {
-        headers: { 'Accept': 'application/json', 'User-Agent': 'LocalvoltsDashboard/1.0' }
-      }, 12000);
-      if (!res.ok) continue;
-      const json = await res.json();
-      const entry = (json.data || [])[0];
-      if (!entry?.history?.data) continue;
-      const { start, data: prices } = entry.history;
-      const startMs = new Date(start).getTime();
-      const stepMs  = 5 * 60 * 1000;
-      // Last 12 intervals = ~1 hour of actuals
-      const slice   = prices.slice(-12);
-      const baseIdx = prices.length - slice.length;
-      return slice
-        .map((p, i) => p == null ? null : makeRow(region, aestDatetimeStr(startMs + (baseIdx+i)*stepMs), p, 'actual'))
-        .filter(Boolean);
-    } catch (_) { /* try next */ }
-  }
-  throw new Error('OpenNEM unreachable');
+/* ── row factory ─────────────────────────────────────────────────────── */
+function mkRow(region, dt, rrpStr, source) {
+  const v = parseFloat(rrpStr);
+  if (isNaN(v) || !dt) return null;
+  return { regionId: region, intervalDatetime: dt, rrp: +v.toFixed(2), rrpCkwh: +(v/10).toFixed(3), source };
 }
 
-/* ── Source 2: AEMO P5 forecast ────────────────────────────────────────── */
-const P5_FOLDER = 'https://www.nemweb.com.au/REPORTS/CURRENT/P5_Reports/';
-
-async function fetchForecast(region) {
-  // 1. Get directory listing
-  const dirRes = await timedFetch(P5_FOLDER, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; LocalvoltsDashboard/1.0)',
-      'Accept': 'text/html,*/*'
-    }
-  }, 12000);
-  if (!dirRes.ok) throw new Error('P5 dir HTTP ' + dirRes.status);
-  const html = await dirRes.text();
-
-  // 2. Pick latest ZIP
-  const re   = /href="([^"]*PUBLIC_P5MIN[^"]*\.zip)"/gi;
-  const zips = [];
-  let m;
-  while ((m = re.exec(html)) !== null) zips.push(m[1]);
-  if (!zips.length) throw new Error('No P5 ZIP files found');
-  zips.sort();
-  let zipUrl = zips[zips.length - 1];
-  if (!zipUrl.startsWith('http')) zipUrl = P5_FOLDER + zipUrl;
-
-  // 3. Download ZIP
-  const zipRes = await timedFetch(zipUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LocalvoltsDashboard/1.0)' }
-  }, 20000);
-  if (!zipRes.ok) throw new Error('P5 ZIP HTTP ' + zipRes.status);
-  const buf = Buffer.from(await zipRes.arrayBuffer());
-
-  // 4. Extract & parse
-  const csv  = extractFirstFileFromZip(buf);
-  const rows = parseAEMOCsv(csv, 'P5MIN', 'REGIONSOLUTION');
-
+/* ── sources ─────────────────────────────────────────────────────────── */
+async function fetchActuals(region) {
+  const html   = await get(DISPATCH_DIR, false, 12000);
+  const zipUrl = resolveZipUrl(html, 'PUBLIC_DISPATCHIS');
+  console.log('[aemo-proxy] DispatchIS ZIP:', zipUrl);
+  const buf    = await get(zipUrl, true, 20000);
+  const csv    = unzipFirst(buf);
+  const rows   = parseMMS(csv, 'DISPATCH', 'PRICE');
   return rows
-    .filter(r => r.REGIONID === region)
-    .map(r => makeRow(region, r.INTERVAL_DATETIME, r.RRP, 'forecast'))
+    .filter(r => r.REGIONID === region && r.INTERVENTION === '0')
+    .map(r => mkRow(region, r.SETTLEMENTDATE, r.RRP, 'actual'))
     .filter(Boolean);
 }
 
-/* ── Handler ──────────────────────────────────────────────────────────── */
-exports.handler = async function(event) {
-  const headers = {
+async function fetchForecast(region) {
+  const html   = await get(P5_DIR, false, 12000);
+  const zipUrl = resolveZipUrl(html, 'PUBLIC_P5MIN');
+  console.log('[aemo-proxy] P5 ZIP:', zipUrl);
+  const buf    = await get(zipUrl, true, 20000);
+  const csv    = unzipFirst(buf);
+  const rows   = parseMMS(csv, 'P5MIN', 'REGIONSOLUTION');
+  return rows
+    .filter(r => r.REGIONID === region)
+    .map(r => mkRow(region, r.INTERVAL_DATETIME, r.RRP, 'forecast'))
+    .filter(Boolean);
+}
+
+/* ── handler ─────────────────────────────────────────────────────────── */
+exports.handler = async function (event) {
+  const hdrs = {
     'Access-Control-Allow-Origin':  '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache'
   };
-
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers, body: '' };
-  }
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: hdrs, body: '' };
 
   const region = ((event.queryStringParameters || {}).region) || 'QLD1';
 
-  // Run both in parallel — don't let one failure block the other
-  const [actualsResult, forecastResult] = await Promise.allSettled([
-    fetchActuals(region),
-    fetchForecast(region)
-  ]);
+  const [aRes, fRes] = await Promise.allSettled([fetchActuals(region), fetchForecast(region)]);
 
-  const actuals  = actualsResult.status  === 'fulfilled' ? actualsResult.value  : [];
-  const forecast = forecastResult.status === 'fulfilled' ? forecastResult.value : [];
+  const actuals  = aRes.status === 'fulfilled' ? aRes.value  : [];
+  const forecast = fRes.status === 'fulfilled' ? fRes.value : [];
 
-  if (actualsResult.status === 'rejected')
-    console.error('[aemo-proxy] actuals failed:', actualsResult.reason?.message);
-  if (forecastResult.status === 'rejected')
-    console.error('[aemo-proxy] forecast failed:', forecastResult.reason?.message);
+  if (aRes.status === 'rejected') console.error('[aemo-proxy] actuals:', aRes.reason?.message);
+  if (fRes.status === 'rejected') console.error('[aemo-proxy] forecast:', fRes.reason?.message);
 
-  // Merge: for any overlapping time slot, actual wins over forecast
+  // Merge — actual beats forecast for same time slot
   const byTime = {};
   [...forecast, ...actuals].forEach(r => { byTime[r.intervalDatetime] = r; });
+  const merged = Object.values(byTime).sort((a, b) => a.intervalDatetime < b.intervalDatetime ? -1 : 1);
 
-  const merged = Object.values(byTime).sort((a, b) =>
-    a.intervalDatetime < b.intervalDatetime ? -1 : 1
-  );
-
-  if (merged.length === 0) {
+  if (!merged.length) {
     const err = [
-      actualsResult.status  === 'rejected' ? 'actuals: '  + actualsResult.reason?.message  : null,
-      forecastResult.status === 'rejected' ? 'forecast: ' + forecastResult.reason?.message : null
+      aRes.status === 'rejected' ? 'actuals: ' + aRes.reason?.message : null,
+      fRes.status === 'rejected' ? 'forecast: ' + fRes.reason?.message : null
     ].filter(Boolean).join(' | ');
-    return { statusCode: 502, headers, body: JSON.stringify({ error: err }) };
+    return { statusCode: 502, headers: hdrs, body: JSON.stringify({ error: err }) };
   }
 
-  console.log(`[aemo-proxy] ${region}: ${actuals.length} actuals + ${forecast.length} forecast = ${merged.length} total`);
-  return { statusCode: 200, headers, body: JSON.stringify(merged) };
+  console.log(`[aemo-proxy] ${region}: ${actuals.length} actual + ${forecast.length} forecast`);
+  return { statusCode: 200, headers: hdrs, body: JSON.stringify(merged) };
 };
