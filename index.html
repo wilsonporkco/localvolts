@@ -1082,9 +1082,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
             <div class="chart-wrap" style="height:150px;"><canvas id="liveRateChart" role="img" aria-label="24hr price forecast.">Price forecast.</canvas></div>
           </div>
           <div class="chart-card" id="aemo-forecast-card">
-            <div class="chart-title" style="margin-bottom:10px;">
-              <span>AEMO spot prices · 5-min intervals</span>
+            <div class="chart-title">
+              <span>AEMO wholesale spot price</span>
               <div style="display:flex;align-items:center;gap:8px;">
+                <div class="chart-legend">
+                  <div class="chart-legend-item"><div class="legend-dot" style="background:#10b981;"></div>Actual</div>
+                  <div class="chart-legend-item"><div class="legend-dot" style="background:#38bdf8;border:1px dashed #38bdf8;"></div>P5 forecast</div>
+                </div>
                 <select id="aemo-region-select" onchange="loadAemoForecast()" style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;color:var(--text);font-family:var(--font);font-size:11px;padding:4px 8px;outline:none;">
                   <option value="QLD1">QLD</option>
                   <option value="NSW1">NSW</option>
@@ -1095,8 +1099,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                 <button class="btn btn-ghost" onclick="loadAemoForecast()" style="font-size:11px;padding:3px 10px;">↺</button>
               </div>
             </div>
-            <div id="aemo-forecast-rows" style="font-family:var(--mono);font-size:12px;"></div>
+            <div class="chart-wrap" style="height:160px;"><canvas id="aemoChart" role="img" aria-label="AEMO spot price."></canvas></div>
             <div id="aemo-forecast-error" style="display:none;font-family:var(--mono);font-size:11px;color:var(--red);margin-top:6px;"></div>
+            <div id="aemo-footer" style="font-size:10px;color:var(--text3);margin-top:4px;"></div>
           </div>
           <div class="chart-card" id="live-debug-card" style="display:none;">
             <div class="chart-title" style="margin-bottom:6px;">
@@ -2383,77 +2388,132 @@ async function loadLive() {
 }
 
 async function loadAemoForecast() {
-  var container = document.getElementById('aemo-forecast-rows');
-  var errEl     = document.getElementById('aemo-forecast-error');
-  var sel       = document.getElementById('aemo-region-select');
-  var region    = sel ? sel.value : 'QLD1';
-  if (!container) return;
-  container.innerHTML = '<span style="color:var(--text3);">Loading…</span>';
+  var errEl    = document.getElementById('aemo-forecast-error');
+  var footerEl = document.getElementById('aemo-footer');
+  var sel      = document.getElementById('aemo-region-select');
+  var region   = sel ? sel.value : 'QLD1';
   if (errEl) errEl.style.display = 'none';
+  if (footerEl) footerEl.textContent = 'Loading…';
 
   try {
-    var res  = await fetch('/.netlify/functions/aemo-proxy?region=' + encodeURIComponent(region));
+    var res = await fetch('/.netlify/functions/aemo-proxy?region=' + encodeURIComponent(region));
     var rawText = await res.text();
     var data;
-    try { data = JSON.parse(rawText); } catch(e) {
-      throw new Error('Invalid response from AEMO proxy');
-    }
+    try { data = JSON.parse(rawText); } catch(e) { throw new Error('Invalid response from AEMO proxy'); }
     if (!res.ok) throw new Error(data.error || 'AEMO proxy error ' + res.status);
     if (!Array.isArray(data) || !data.length) throw new Error('No AEMO data available');
 
-    // Show up to 24 intervals (past actual + near forecast)
-    var rows   = data.slice(-24);
-    var minRRP = Math.min.apply(null, rows.map(function(r){ return r.rrp; }));
-    var maxRRP = Math.max.apply(null, rows.map(function(r){ return r.rrp; }));
-    var span   = maxRRP - minRRP || 1;
+    // Parse datetime strings into JS timestamps
+    function parseDt(s) {
+      return new Date(s.replace(/\//g, '-').replace(' ', 'T') + '+10:00');
+    }
 
-    var html = '<table style="width:100%;border-collapse:collapse;">';
-    html += '<tr style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;">';
-    html += '<th style="text-align:left;padding:3px 0;">Time (AEST)</th>';
-    html += '<th style="text-align:right;padding:3px 0;">$/MWh</th>';
-    html += '<th style="text-align:right;padding:3px 0;">c/kWh</th>';
-    html += '<th style="text-align:left;padding:3px 8px;"></th>';
-    html += '<th style="text-align:left;padding:3px 0;width:52px;"></th>';
-    html += '</tr>';
+    // Split into actuals and forecast
+    var actuals  = data.filter(function(r){ return r.source === 'actual'; });
+    var forecast = data.filter(function(r){ return r.source === 'forecast'; });
 
-    rows.forEach(function(r) {
-      // AEMO datetime format: "2024/01/15 10:05:00" — convert slashes and parse as AEST
-      var dtRaw  = (r.intervalDatetime || '').replace(/\//g, '-');
-      var dtUTC  = new Date(dtRaw.replace(' ', 'T') + '+10:00');
-      var timeStr = isNaN(dtUTC) ? r.intervalDatetime : dtUTC.toLocaleTimeString('en-AU', { hour:'2-digit', minute:'2-digit' });
+    // Build unified label list (all unique times, sorted)
+    var allTimes = data.map(function(r){ return r.intervalDatetime; });
+    allTimes = allTimes.filter(function(v,i,a){ return a.indexOf(v) === i; }).sort();
 
-      var rrp    = r.rrp;
-      var ckwh   = r.rrpCkwh;
-      var color  = rrp < 0 ? '#8b5cf6' : ckwh < 5 ? '#10b981' : ckwh < 20 ? 'var(--text)' : ckwh < 50 ? '#f59e0b' : '#ef4444';
-      var barPct = Math.max(2, Math.round(((rrp - minRRP) / span) * 100));
-      // Source badge: green pill = actual DISPATCH, blue = P5 forecast
-      var srcBg  = r.source === 'DISPATCH' ? 'rgba(16,185,129,0.12)' : 'rgba(14,165,233,0.12)';
-      var srcCol = r.source === 'DISPATCH' ? '#10b981' : '#38bdf8';
-      var srcTxt = r.source === 'DISPATCH' ? 'actual' : 'fcst';
-
-      html += '<tr style="border-top:1px solid var(--border);">';
-      html += '<td style="padding:4px 0;font-size:11px;color:var(--text2);">' + timeStr + '</td>';
-      html += '<td style="padding:4px 0;text-align:right;font-size:11px;color:' + color + ';">' + rrp.toFixed(2) + '</td>';
-      html += '<td style="padding:4px 0;text-align:right;font-size:12px;font-weight:600;color:' + color + ';">' + ckwh.toFixed(2) + ' c</td>';
-      html += '<td style="padding:4px 8px;">';
-      html += '<div style="background:var(--border);border-radius:3px;height:6px;overflow:hidden;">';
-      html += '<div style="background:' + color + ';width:' + barPct + '%;height:100%;border-radius:3px;transition:width 0.3s;"></div>';
-      html += '</div></td>';
-      html += '<td style="padding:4px 0;"><span style="font-family:var(--mono);font-size:9px;background:' + srcBg + ';color:' + srcCol + ';padding:1px 5px;border-radius:3px;">' + srcTxt + '</span></td>';
-      html += '</tr>';
+    var labels = allTimes.map(function(dt) {
+      var d = parseDt(dt);
+      return isNaN(d) ? dt : d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
     });
-    html += '</table>';
-    html += '<div style="font-size:10px;color:var(--text3);margin-top:8px;display:flex;gap:14px;align-items:center;">';
-    html += '<span>Source: AEMO NEMWeb · ' + region + ' · wholesale spot (excl. network &amp; retail charges)</span>';
-    html += '<span style="display:flex;gap:6px;align-items:center;margin-left:auto;">';
-    html += '<span style="font-family:var(--mono);font-size:9px;background:rgba(16,185,129,0.12);color:#10b981;padding:1px 5px;border-radius:3px;">actual</span> dispatch';
-    html += '<span style="font-family:var(--mono);font-size:9px;background:rgba(14,165,233,0.12);color:#38bdf8;padding:1px 5px;border-radius:3px;">fcst</span> P5 forecast';
-    html += '</span></div>';
-    container.innerHTML = html;
+
+    // Map each time slot to rrpCkwh (null if not present for that source)
+    var byTime = {};
+    data.forEach(function(r){ byTime[r.intervalDatetime] = r; });
+
+    var actualMap   = {};
+    actuals.forEach(function(r){ actualMap[r.intervalDatetime]   = r.rrpCkwh; });
+    var forecastMap = {};
+    forecast.forEach(function(r){ forecastMap[r.intervalDatetime] = r.rrpCkwh; });
+
+    var actualData   = allTimes.map(function(t){ return actualMap[t]   !== undefined ? actualMap[t]   : null; });
+    var forecastData = allTimes.map(function(t){ return forecastMap[t] !== undefined ? forecastMap[t] : null; });
+
+    // Destroy old chart if exists
+    var existingChart = Chart.getChart('aemoChart');
+    if (existingChart) existingChart.destroy();
+
+    var ctx = document.getElementById('aemoChart');
+    if (!ctx) return;
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Actual (c/kWh)',
+            data: actualData,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.08)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+            spanGaps: false
+          },
+          {
+            label: 'P5 Forecast (c/kWh)',
+            data: forecastData,
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56,189,248,0.06)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+            borderDash: [5, 3],
+            spanGaps: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: function(items) { return items[0].label + ' AEST'; },
+              label: function(ctx) {
+                if (ctx.parsed.y === null) return null;
+                return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' c/kWh';
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { font: { family: 'DM Mono', size: 9 }, color: '#9ca3af', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+            grid: { color: 'rgba(0,0,0,0.04)' }
+          },
+          y: {
+            ticks: {
+              font: { family: 'DM Mono', size: 9 }, color: '#9ca3af',
+              callback: function(v) { return v.toFixed(1) + ' c'; }
+            },
+            grid: { color: 'rgba(0,0,0,0.04)' }
+          }
+        }
+      }
+    });
+
+    var nActual   = actuals.length;
+    var nForecast = forecast.length;
+    var parts = [];
+    if (nActual)   parts.push(nActual   + ' actual intervals (OpenNEM)');
+    if (nForecast) parts.push(nForecast + ' forecast intervals (AEMO P5)');
+    if (footerEl) footerEl.textContent = region + ' · ' + parts.join(' + ') + ' · wholesale spot only';
 
   } catch(e) {
-    container.innerHTML = '';
-    if (errEl) { errEl.textContent = 'AEMO forecast unavailable: ' + e.message; errEl.style.display = 'block'; }
+    if (footerEl) footerEl.textContent = '';
+    if (errEl) { errEl.textContent = 'AEMO data unavailable: ' + e.message; errEl.style.display = 'block'; }
   }
 }
 
