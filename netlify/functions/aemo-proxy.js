@@ -193,20 +193,38 @@ async function fetchForecast(region) {
   const zipUrl = resolveZipUrl(await htmlRes.text(), 'PUBLIC_P5MIN');
   console.log('[aemo-proxy] ZIP:', zipUrl);
 
-  const csv  = await downloadAndUnzip(zipUrl);
-  const rows = parseMMS(csv, 'P5MIN', 'REGIONSOLUTION');
+  const csv = await downloadAndUnzip(zipUrl);
 
-  return rows
-    .filter(r => r.REGIONID === region)
-    .map(r => {
-      const v = parseFloat(r.RRP);
-      if (isNaN(v) || !r.INTERVAL_DATETIME) return null;
-      return { regionId: region,
-               intervalDatetime: r.INTERVAL_DATETIME.replace('T', ' ').slice(0, 19),
-               rrp: +v.toFixed(2), rrpCkwh: +(v / 10).toFixed(3), source: 'forecast' };
-    })
-    .filter(Boolean);
+  // ── DEBUG: expose raw CSV structure so we can see what's actually there
+  const csvLen  = csv.length;
+  const csvHead = csv.slice(0, 300).replace(/\r/g, '').split('\n').slice(0, 6).join(' || ');
+  console.log('[aemo-proxy] CSV len=' + csvLen + ' head=' + csvHead);
+
+  const allRows = parseMMS(csv, 'P5MIN', 'REGIONSOLUTION');
+  const regions = [...new Set(allRows.map(r => r.REGIONID || r[Object.keys(r).find(k => /region/i.test(k))] || '?'))];
+  const firstKeys = allRows[0] ? Object.keys(allRows[0]).join(',') : 'none';
+  console.log('[aemo-proxy] rows=' + allRows.length + ' regions=[' + regions + '] keys=' + firstKeys);
+
+  // Build debug string for response header
+  const dbg = 'csv=' + csvLen + 'b|rows=' + allRows.length + '|regions=[' + regions + ']|keys=' + firstKeys.slice(0, 80) + '|head=' + csv.slice(0, 60).replace(/[\r\n]/g, '~');
+  fetchForecast._lastDebug = dbg;
+
+  // Flexible match: strip spaces/quotes, case-insensitive
+  const clean = s => (s || '').replace(/["\s]/g, '').toUpperCase();
+  const filtered = allRows.filter(r => {
+    const id = r.REGIONID || r[Object.keys(r).find(k => clean(k) === 'REGIONID')] || '';
+    return clean(id) === clean(region);
+  });
+
+  return filtered.map(r => {
+    const v = parseFloat(r.RRP || r[Object.keys(r).find(k => clean(k) === 'RRP')] || '');
+    const dt = r.INTERVAL_DATETIME || r[Object.keys(r).find(k => clean(k) === 'INTERVAL_DATETIME')] || '';
+    if (isNaN(v) || !dt) return null;
+    return { regionId: region, intervalDatetime: dt.replace('T', ' ').slice(0, 19),
+             rrp: +v.toFixed(2), rrpCkwh: +(v / 10).toFixed(3), source: 'forecast' };
+  }).filter(Boolean);
 }
+fetchForecast._lastDebug = '';
 
 /* ── Netlify handler ────────────────────────────────────────────────── */
 exports.handler = async function (event) {
@@ -235,10 +253,13 @@ exports.handler = async function (event) {
   const actuals  = aRes.status === 'fulfilled' ? aRes.value : [];
   const forecast = fRes.status === 'fulfilled' ? fRes.value : [];
 
-  // Expose forecast error in response header so frontend can display it
+  // Expose forecast error/debug in response headers so frontend can display it
+  cors['Access-Control-Expose-Headers'] = 'X-Forecast-Error,X-Forecast-Debug';
   if (fRes.status === 'rejected') {
     cors['X-Forecast-Error'] = (fRes.reason?.message || 'unknown').slice(0, 500);
-    cors['Access-Control-Expose-Headers'] = 'X-Forecast-Error';
+  }
+  if (fetchForecast._lastDebug) {
+    cors['X-Forecast-Debug'] = fetchForecast._lastDebug.slice(0, 500);
   }
 
   if (!actuals.length && !forecast.length) {
