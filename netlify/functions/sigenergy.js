@@ -268,45 +268,20 @@ exports.handler = async (event) => {
         break;
 
       case 'setMode': {
-        // Uses REST battery command: POST /openapi/system/battery/command
-        // Maps integer mode → activeMode string:
-        //   0 = Max Self-Consumption → selfConsumption
-        //   1 = Full Feed-in to Grid → selfConsumption-grid
-        //   3 = Backup / Emergency   → idle
+        // PUT /openapi/instruction/settings
+        // mode values: 0 = Max Self-Consumption, 1 = Full Feed-in to Grid
+        //              2 = Time of Use,          3 = Backup / Emergency
+        // Requires system to be in Remote EMS mode.
         if (!systemId) throw new Error('systemId required for action=setMode');
         if (mode === undefined || mode === null) throw new Error('mode required for action=setMode');
         const modeInt = parseInt(mode, 10);
         if (isNaN(modeInt)) throw new Error('mode must be a number (0–3)');
 
-        const MODE_MAP = { 0: 'selfConsumption', 1: 'selfConsumption-grid', 3: 'idle' };
-        const activeMode = MODE_MAP[modeInt];
-        if (!activeMode) throw new Error(`Mode ${modeInt} is not supported via battery command`);
-
-        const cmd = {
-          systemId,
-          activeMode,
-          startTime: Math.floor(Date.now() / 1000),
-          duration:  1440   // 24 hours — reapply via auto-rules or manual if needed sooner
-        };
-
-        console.log('[sigenergy] setMode → batteryCommand:', JSON.stringify(cmd));
-        const body = { accessToken: token, commands: [cmd] };
-        const res = await fetch(`${BASE}/openapi/system/battery/command`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body:    JSON.stringify(body)
-        });
-        if (res.status === 429) throw new Error('Sigenergy rate limit hit — wait and retry');
-        const text = await res.text();
-        console.log('[sigenergy] setMode response:', res.status, text.slice(0, 300));
-        if (!text || !text.trim()) {
-          result = res.ok ? { code: 0, data: { success: true } } : (() => { throw new Error(`Battery command failed (HTTP ${res.status})`); })();
-        } else {
-          result = JSON.parse(text);
-          if (result.code !== 0 && result.code !== undefined) {
-            throw new Error(`Battery command rejected (code ${result.code}): ${result.msg || 'unknown'}`);
-          }
-        }
+        result = await sigenPut(
+          token,
+          '/openapi/instruction/settings',
+          { systemId, energyStorageOperationMode: modeInt }
+        );
         break;
       }
 
