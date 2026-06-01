@@ -133,7 +133,6 @@ function sendMqttBatteryCommand(token, commandPayload) {
 
         const message = JSON.stringify({
           accessToken: token,
-          replyTopic:  TOPIC_SUB,
           commands:    [commandPayload]
         });
 
@@ -282,27 +281,43 @@ exports.handler = async (event) => {
       case 'batteryCommand': {
         // Send a direct battery command over MQTT.
         // Required params: systemId
-        // Optional params: activeMode (default: 'charge'), duration (default: 60 min),
-        //   chargingPower (default: null = use system max), chargePriorityType (default: 'GRID'),
-        //   startTime (default: now)
+        // Optional params:
+        //   activeMode          — charge | discharge | idle | selfConsumption | selfConsumption-grid (default: 'charge')
+        //   duration            — minutes (default: 60)
+        //   startTime           — unix seconds (default: now)
+        //   chargingPower       — KW max charge/discharge power
+        //   pvPower             — KW max PV charging power
+        //   maxSellPower        — KW max export to grid
+        //   maxPurchasePower    — KW max import from grid
+        //   chargePriorityType  — PV | GRID  (only relevant for activeMode=charge)
+        //   dischargePriorityType — PV | BATTERY  (only relevant for activeMode=discharge)
         if (!systemId) throw new Error('systemId required for action=batteryCommand');
 
-        const activeMode        = params.activeMode        || 'charge';
-        const duration          = parseInt(params.duration  || '60', 10);   // minutes
-        const startTime         = Math.floor(Date.now() / 1000);
-        const chargePriorityType = params.chargePriorityType || 'GRID';
+        const activeMode = params.activeMode || 'charge';
+        const duration   = parseInt(params.duration || '60', 10);   // minutes
+        const startTime  = params.startTime ? parseInt(params.startTime, 10) : Math.floor(Date.now() / 1000);
 
         const cmd = {
           systemId,
           activeMode,
           startTime,
-          duration,
-          chargePriorityType
+          duration
         };
 
-        // Only include chargingPower if explicitly supplied (null = let inverter decide)
-        if (params.chargingPower !== undefined && params.chargingPower !== null && params.chargingPower !== '') {
-          cmd.chargingPower = parseFloat(params.chargingPower);
+        // Optional power limits — only include if explicitly supplied
+        const optionalNumbers = ['chargingPower', 'pvPower', 'maxSellPower', 'maxPurchasePower'];
+        for (const field of optionalNumbers) {
+          if (params[field] !== undefined && params[field] !== null && params[field] !== '') {
+            cmd[field] = parseFloat(params[field]);
+          }
+        }
+
+        // Priority fields — only include when relevant to the active mode
+        if (activeMode === 'charge' && params.chargePriorityType) {
+          cmd.chargePriorityType = params.chargePriorityType;
+        }
+        if (activeMode === 'discharge' && params.dischargePriorityType) {
+          cmd.dischargePriorityType = params.dischargePriorityType;
         }
 
         result = await sendMqttBatteryCommand(token, cmd);
@@ -313,7 +328,7 @@ exports.handler = async (event) => {
         return {
           statusCode: 400,
           headers:    CORS,
-          body:       JSON.stringify({ error: `Unknown action: "${action}". Valid: systems, devices, summary, energyFlow, deviceRealtime, setMode, onboard, offboard, batteryCommand` })
+          body:       JSON.stringify({ error: `Unknown action: "${action}". Valid actions: systems, devices, summary, energyFlow, deviceRealtime, setMode, onboard, offboard, batteryCommand` })
         };
     }
 
