@@ -4207,8 +4207,28 @@ async function _setBatteryMode(mode) {
 
   try {
     await sigenCall('setMode', { systemId: systemId, mode: mode });
-    if (statusEl) { statusEl.textContent = '✓ Set to '+MODES[mode]; statusEl.style.color='var(--green)'; }
-    setTimeout(function(){ if(statusEl) statusEl.textContent=''; }, 4000);
+    if (statusEl) { statusEl.textContent = 'Command sent — confirming…'; statusEl.style.color='var(--text3)'; }
+
+    // Wait 3 s then read back the actual mode to confirm it changed
+    await new Promise(function(r){ setTimeout(r, 3000); });
+    try {
+      var modeResult = await sigenCall('getMode', { systemId: systemId });
+      var modeData   = (modeResult && modeResult.data) ? modeResult.data : modeResult;
+      var confirmed  = modeData && modeData.energyStorageOperationMode;
+      if (confirmed !== undefined && confirmed !== null) {
+        if (parseInt(confirmed) === parseInt(mode)) {
+          if (statusEl) { statusEl.textContent = '✓ Confirmed: '+MODES[mode]; statusEl.style.color='var(--green)'; }
+        } else {
+          if (statusEl) { statusEl.textContent = '⚠ Sent, but inverter reports: '+(MODES[confirmed]||'mode '+confirmed); statusEl.style.color='orange'; }
+        }
+      } else {
+        if (statusEl) { statusEl.textContent = '✓ Set to '+MODES[mode]+' (unconfirmed)'; statusEl.style.color='var(--green)'; }
+      }
+    } catch(verifyErr) {
+      // Verification failed (e.g. rate limited) — treat command as sent
+      if (statusEl) { statusEl.textContent = '✓ Set to '+MODES[mode]+' (unconfirmed)'; statusEl.style.color='var(--green)'; }
+    }
+    setTimeout(function(){ if(statusEl) statusEl.textContent=''; }, 6000);
   } catch(err) {
     updateModeTiles(null);  // revert highlight on error
     if (statusEl) {
