@@ -269,19 +269,29 @@ exports.handler = async (event) => {
         break;
 
       case 'setMode': {
-        // PUT /openapi/instruction/settings
-        // mode values: 0 = Max Self-Consumption, 1 = Full Feed-in to Grid
-        //              2 = Time of Use,          3 = Backup / Emergency
-        // Requires system to be in Remote EMS mode.
+        // MQTT: topic openapi/instruction/command (Battery Command)
+        // HTTP PUT /openapi/instruction/settings is restricted to certain Sigenergy partner tiers.
+        // mode values: 0 = Max Self-Consumption, 1 = Full Feed-in to Grid, 3 = Backup/Emergency
         if (!systemId) throw new Error('systemId required for action=setMode');
         if (mode === undefined || mode === null) throw new Error('mode required for action=setMode');
         const modeInt = parseInt(mode, 10);
-        if (isNaN(modeInt)) throw new Error('mode must be a number (0–3)');
+        if (isNaN(modeInt)) throw new Error('mode must be a number (0, 1, or 3)');
 
-        const setModeBody = { systemId, energyStorageOperationMode: modeInt };
-        console.log('[sigenergy] setMode PUT body:', JSON.stringify(setModeBody));
-        result = await sigenPut(token, '/openapi/instruction/settings', setModeBody);
-        console.log('[sigenergy] setMode response:', JSON.stringify(result));
+        const MODE_MAP = { 0: 'selfConsumption', 1: 'selfConsumption-grid', 3: 'idle' };
+        const activeMode = MODE_MAP[modeInt];
+        if (!activeMode) throw new Error(`Mode ${modeInt} is not supported`);
+
+        const cmd = {
+          systemId,
+          activeMode,
+          startTime: Math.floor(Date.now() / 1000),
+          duration:  1440   // 24 hours
+        };
+        console.log('[sigenergy] setMode → MQTT battery command:', JSON.stringify(cmd));
+        const mqttResult = await sendMqttBatteryCommand(token, cmd);
+        console.log('[sigenergy] setMode MQTT result:', JSON.stringify(mqttResult));
+        // Normalise to standard { code, data } format so the UI's sigenCall doesn't error
+        result = { code: 0, msg: 'success', data: mqttResult };
         break;
       }
 
