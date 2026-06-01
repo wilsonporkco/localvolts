@@ -76,6 +76,19 @@ async function sigenPost(token, path, body) {
   return res.json();
 }
 
+async function sigenPut(token, path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method:  'PUT',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok && res.status === 429) throw new Error('Sigenergy rate limit hit — wait ~5 minutes and retry');
+  return res.json();
+}
+
 // ── MQTT battery command ─────────────────────────────────────────────────────
 // Sends a single battery command over MQTT and waits for a response (or times out).
 // Returns a Promise<object> — resolves with { success: true } or rejects with an Error.
@@ -255,7 +268,7 @@ exports.handler = async (event) => {
         break;
 
       case 'setMode': {
-        // Switch operating mode
+        // PUT /openapi/instruction/settings
         // mode values: 0 = Max Self-Consumption, 1 = Full Feed-in to Grid
         //              2 = Time of Use,          3 = Backup / Emergency
         if (!systemId) throw new Error('systemId required for action=setMode');
@@ -263,11 +276,9 @@ exports.handler = async (event) => {
         const modeInt = parseInt(mode, 10);
         if (isNaN(modeInt)) throw new Error('mode must be a number (0–3)');
 
-        // NOTE: If this returns a 404/error, the control endpoint URL may differ
-        // for your API key type. Check developer.sigencloud.com for the correct path.
-        result = await sigenPost(
+        result = await sigenPut(
           token,
-          `/openapi/systems/${systemId}/ems/energyStorageOperationMode`,
+          '/openapi/instruction/settings',
           { systemId, energyStorageOperationMode: modeInt }
         );
         break;
