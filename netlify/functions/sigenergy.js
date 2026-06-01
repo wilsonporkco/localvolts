@@ -264,7 +264,8 @@ exports.handler = async (event) => {
         // Returns: { data: { energyStorageOperationMode: 0|1|2|3 } }
         // Rate limit: once per 5 minutes per station
         if (!systemId) throw new Error('systemId required for action=getMode');
-        result = await sigenGet(token, `/openapi/instruction/${systemId}/settings`, { systemId });
+        result = await sigenGet(token, `/openapi/instruction/${systemId}/settings`);
+        console.log('[sigenergy] getMode response:', JSON.stringify(result));
         break;
 
       case 'setMode': {
@@ -277,11 +278,10 @@ exports.handler = async (event) => {
         const modeInt = parseInt(mode, 10);
         if (isNaN(modeInt)) throw new Error('mode must be a number (0–3)');
 
-        result = await sigenPut(
-          token,
-          '/openapi/instruction/settings',
-          { systemId, energyStorageOperationMode: modeInt }
-        );
+        const setModeBody = { systemId, energyStorageOperationMode: modeInt };
+        console.log('[sigenergy] setMode PUT body:', JSON.stringify(setModeBody));
+        result = await sigenPut(token, '/openapi/instruction/settings', setModeBody);
+        console.log('[sigenergy] setMode response:', JSON.stringify(result));
         break;
       }
 
