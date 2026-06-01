@@ -9,3 +9,6 @@
 
 [functions."aemo-proxy"]
   timeout = 26
+
+[functions."sigenergy"]
+  timeout = 26
