@@ -246,6 +246,14 @@ exports.handler = async (event) => {
         break;
 
       // ── Control ──────────────────────────────────────────────────────────
+      case 'getMode':
+        // GET /openapi/instruction/{systemId}/settings
+        // Returns: { data: { energyStorageOperationMode: 0|1|2|3 } }
+        // Rate limit: once per 5 minutes per station
+        if (!systemId) throw new Error('systemId required for action=getMode');
+        result = await sigenGet(token, `/openapi/instruction/${systemId}/settings`, { systemId });
+        break;
+
       case 'setMode': {
         // Switch operating mode
         // mode values: 0 = Max Self-Consumption, 1 = Full Feed-in to Grid
