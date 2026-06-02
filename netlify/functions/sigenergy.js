@@ -329,8 +329,19 @@ exports.handler = async (event) => {
         const sigenPass2 = process.env.SIGEN_PASSWORD || params.sigenPassword;
         if (!sigenUser2 || !sigenPass2) throw new Error('SIGEN_USERNAME / SIGEN_PASSWORD not set — needed for setMode');
 
-        const cToken2   = await getConsumerToken(sigenUser2, sigenPass2);
-        const smPayload = { stationId: systemId, operationMode, profileId: -1 };
+        const cToken2 = await getConsumerToken(sigenUser2, sigenPass2);
+
+        // Consumer API uses its own numeric stationId, not the developer systemId.
+        // Fetch it from device/owner/station/home.
+        const stationRes  = await fetch(`${CBASE}/device/owner/station/home`, {
+          headers: { 'Authorization': `Bearer ${cToken2}` }
+        });
+        const stationJson = await stationRes.json();
+        const consumerStationId = stationJson.data && stationJson.data.stationId;
+        if (!consumerStationId) throw new Error('Could not get consumer stationId: ' + JSON.stringify(stationJson));
+        console.log('[sigenergy] consumerStationId:', consumerStationId);
+
+        const smPayload = { stationId: consumerStationId, operationMode, profileId: -1 };
         console.log('[sigenergy] setMode consumer PUT:', JSON.stringify(smPayload));
         const smRes  = await fetch(`${CBASE}/device/energy-profile/mode`, {
           method:  'PUT',
