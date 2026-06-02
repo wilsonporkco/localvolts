@@ -251,19 +251,35 @@ exports.handler = async (event) => {
     }
 
     // 3 ── Get current SOC via consumer API (avoids developer API access restrictions)
-    const cTok      = await getConsumerToken();
-    const cStation  = await getConsumerStationId(cTok);
-    const flowRes   = await fetch(`${CBASE}/device/sigen/station/energyflow?id=${cStation}`, {
-      headers: { 'Authorization': `Bearer ${cTok}` }
-    });
-    const flowText  = await flowRes.text();
-    let flowJson;
-    try { flowJson = JSON.parse(flowText); } catch(e) {
-      throw new Error('energyFlow JSON parse error: ' + flowText.slice(0, 100));
+    const cTok     = await getConsumerToken();
+    const cStation = await getConsumerStationId(cTok);
+    let soc = -1;
+
+    // Try consumer energyFlow endpoint
+    try {
+      const flowRes  = await fetch(`${CBASE}/device/sigen/station/energyflow?id=${cStation}`, {
+        headers: { 'Authorization': `Bearer ${cTok}` }
+      });
+      const flowText = await flowRes.text();
+      if (flowText && flowText.trim()) {
+        const flowJson = JSON.parse(flowText);
+        let flow = flowJson.data || flowJson;
+        if (typeof flow === 'string') flow = JSON.parse(flow);
+        soc = parseFloat(flow.batterySoc ?? flow.soc ?? flow.storageSoc ?? -1);
+      }
+    } catch(e) {
+      console.log('[battery-auto] consumer energyFlow failed, trying developer API:', e.message);
     }
-    let flow = flowJson.data || flowJson;
-    if (typeof flow === 'string') flow = JSON.parse(flow);
-    const soc = parseFloat(flow.batterySoc ?? flow.soc ?? flow.storageSoc ?? -1);
+
+    // Fallback: developer API energyFlow
+    if (soc < 0) {
+      const flowJson2 = await sigenGet(`/openapi/systems/${systemId}/energyFlow`, { systemId });
+      if (flowJson2.code === 0) {
+        let flow2 = flowJson2.data;
+        if (typeof flow2 === 'string') flow2 = JSON.parse(flow2);
+        soc = parseFloat(flow2.batterySoc ?? flow2.soc ?? -1);
+      }
+    }
 
     logEntry.soc = soc;
 
