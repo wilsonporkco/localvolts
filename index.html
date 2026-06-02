@@ -786,6 +786,30 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
         <div id="battery-content" style="display:none;">
 
           <!-- Key metrics row -->
+          <!-- Generation vs Used summary bar -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+            <div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border-radius:12px;padding:14px;text-align:center;border:1px solid #fde68a;">
+              <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:#d97706;text-transform:uppercase;margin-bottom:6px;">☀️ Generation</div>
+              <div id="sum-gen" style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.03em;">—</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;">kW</div>
+            </div>
+            <div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:12px;padding:14px;text-align:center;border:1px solid #bfdbfe;">
+              <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:#2563eb;text-transform:uppercase;margin-bottom:6px;">🏠 Used</div>
+              <div id="sum-used" style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.03em;">—</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;">kW</div>
+            </div>
+            <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:12px;padding:14px;text-align:center;border:1px solid #bbf7d0;">
+              <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:#15803d;text-transform:uppercase;margin-bottom:6px;">⏱ Remaining</div>
+              <div id="sum-time" style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.03em;">—</div>
+              <div id="sum-time-label" style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;">hrs</div>
+            </div>
+            <div style="background:linear-gradient(135deg,#fdf2f8,#fce7f3);border-radius:12px;padding:14px;text-align:center;border:1px solid #fbcfe8;">
+              <div id="sum-grid-label" style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:#9d174d;text-transform:uppercase;margin-bottom:6px;">⚡ Grid</div>
+              <div id="sum-grid" style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:-0.03em;">—</div>
+              <div id="sum-grid-unit" style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;">kW import</div>
+            </div>
+          </div>
+
           <div class="metrics-row" id="battery-metrics" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;"></div>
 
           <!-- SOC gauge + energy flow side by side -->
@@ -900,6 +924,18 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                 <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--text3);text-transform:uppercase;margin-bottom:4px;">Last updated</div>
                 <div id="battery-last-updated" style="font-family:var(--mono);font-size:11px;color:var(--text2);">—</div>
               </div>
+            </div>
+          </div>
+
+          <!-- Price forecast + SOC history charts -->
+          <div class="two-charts" style="margin-top:14px;">
+            <div class="chart-card">
+              <div class="chart-title" style="margin-bottom:10px;">Price Forecast — Next 12 Hours</div>
+              <div style="height:160px;"><canvas id="batt-price-chart"></canvas></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title" style="margin-bottom:10px;">Battery SOC — Last 24 Hours</div>
+              <div style="height:160px;"><canvas id="batt-soc-chart"></canvas></div>
             </div>
           </div>
 
@@ -4006,6 +4042,31 @@ async function loadBattery() {
         mCard('Solar', pvkW !== null ? pvkW.toFixed(2) : '—', 'kW', 'amber');
     }
 
+    // ── Summary bar ──────────────────────────────────────────────────────
+    var BATT_CAPACITY_KWH = 48.36;
+    if (document.getElementById('sum-gen'))  document.getElementById('sum-gen').textContent  = pvkW   !== null ? pvkW.toFixed(2)   : '—';
+    if (document.getElementById('sum-used')) document.getElementById('sum-used').textContent = loadkW !== null ? loadkW.toFixed(2) : '—';
+    if (document.getElementById('sum-grid')) {
+      var gv = gridkW !== null ? Math.abs(gridkW).toFixed(2) : '—';
+      document.getElementById('sum-grid').textContent = gv;
+      var gu = document.getElementById('sum-grid-unit');
+      if (gu) gu.textContent = gridkW !== null ? (gridkW > 0.05 ? 'kW import' : gridkW < -0.05 ? 'kW export' : 'kW idle') : 'kW';
+    }
+    // Remaining time estimate
+    if (soc !== null && battkW !== null) {
+      var timeEl    = document.getElementById('sum-time');
+      var timeLblEl = document.getElementById('sum-time-label');
+      if (Math.abs(battkW) > 0.1) {
+        var energyKwh  = (soc / 100) * BATT_CAPACITY_KWH;
+        var hrs        = battkW < 0 ? (energyKwh / Math.abs(battkW)) : ((1 - soc/100) * BATT_CAPACITY_KWH / battkW);
+        if (timeEl) timeEl.textContent = hrs < 100 ? hrs.toFixed(1) : '>99';
+        if (timeLblEl) timeLblEl.textContent = battkW < 0 ? 'hrs to empty' : 'hrs to full';
+      } else {
+        if (timeEl) timeEl.textContent = '∞';
+        if (timeLblEl) timeLblEl.textContent = battkW < 0 ? 'discharging idle' : 'holding';
+      }
+    }
+
     // ── SOC gauge ────────────────────────────────────────────────────────
     if (soc !== null) { updateSocGauge(soc); lastCheckedSoc = soc; }
 
@@ -4067,12 +4128,107 @@ async function loadBattery() {
     setDot('battery-dot', 'ok');
     setTxt('battery-status', 'Updated ' + new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}));
 
+    // ── Load charts (non-blocking) ────────────────────────────────────────
+    loadBattPriceChart();
+    loadBattSocChart();
+
   } catch(err) {
     document.getElementById('battery-loading').style.display = 'none';
     showErr('battery-error', err.message);
     setDot('battery-dot', 'err');
     setTxt('battery-status', 'Error');
   }
+}
+
+// ── Battery price forecast chart ─────────────────────────────────────────────
+var _battPriceChart = null;
+async function loadBattPriceChart() {
+  var canvas = document.getElementById('batt-price-chart');
+  if (!canvas) return;
+  try {
+    // Reuse AEMO forecast data if available, else fetch
+    var acc = lvAccounts[lvActiveIdx] || lvAccounts[0] || {};
+    var nmi = '';
+    try { var _br = await sbSettingsLoad('batt_rules'); if (_br && _br.nmi) nmi = _br.nmi; } catch(e){}
+    if (!nmi && knownNMIs.length) nmi = knownNMIs[0];
+    if (!nmi) return;
+
+    var p = { NMI: nmi, from: new Date().toISOString().slice(0,10) };
+    if (acc.apikey)  p._apikey  = acc.apikey;
+    if (acc.partner) p._partner = acc.partner;
+    var res  = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
+    var data = await res.json();
+    if (!Array.isArray(data)) return;
+
+    var now     = Date.now();
+    var future  = data.filter(function(r) {
+      return new Date(r.intervalDatetime).getTime() >= now - 300000;
+    }).slice(0, 144); // 12 hours @ 5-min
+
+    var labels = future.map(function(r) {
+      return new Date(r.intervalDatetime).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+    });
+    var costs  = future.map(function(r) { return parseFloat(r.costsAllVarRate) || null; });
+    var earn   = future.map(function(r) { return parseFloat(r.earningsAllVarRate) || null; });
+
+    if (_battPriceChart) _battPriceChart.destroy();
+    _battPriceChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label:'Buy c/kWh', data: costs, borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.08)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5 },
+          { label:'Sell c/kWh', data: earn,  borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.08)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5 }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ labels:{ font:{ size:10 }, boxWidth:12 } } },
+        scales:{
+          x:{ ticks:{ maxTicksLimit:8, font:{size:9} }, grid:{display:false} },
+          y:{ ticks:{ font:{size:9} }, grid:{ color:'rgba(0,0,0,0.05)' } }
+        }
+      }
+    });
+  } catch(e) { console.log('batt price chart error:', e.message); }
+}
+
+// ── Battery SOC history chart ─────────────────────────────────────────────────
+var _battSocChart = null;
+async function loadBattSocChart() {
+  var canvas = document.getElementById('batt-soc-chart');
+  if (!canvas) return;
+  try {
+    var hist = await sbSettingsLoad('batt_history');
+    if (!hist || !hist.length) return;
+
+    var labels  = hist.map(function(r) {
+      return new Date(r.ts).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+    });
+    var socs    = hist.map(function(r) { return r.soc != null ? parseFloat(r.soc) : null; });
+    var prices  = hist.map(function(r) { return r.price != null ? parseFloat(r.price) : null; });
+
+    if (_battSocChart) _battSocChart.destroy();
+    _battSocChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label:'SOC %', data:socs, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.1)', fill:true, tension:0.3, pointRadius:0, borderWidth:2, yAxisID:'y' },
+          { label:'Price c/kWh', data:prices, borderColor:'#f59e0b', backgroundColor:'transparent', tension:0.3, pointRadius:0, borderWidth:1.5, borderDash:[4,3], yAxisID:'y2' }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ labels:{ font:{size:10}, boxWidth:12 } } },
+        scales:{
+          x:{ ticks:{ maxTicksLimit:8, font:{size:9} }, grid:{display:false} },
+          y:{ position:'left', min:0, max:100, ticks:{ font:{size:9} }, grid:{ color:'rgba(0,0,0,0.05)' } },
+          y2:{ position:'right', ticks:{ font:{size:9} }, grid:{display:false} }
+        }
+      }
+    });
+  } catch(e) { console.log('batt soc chart error:', e.message); }
 }
 
 // ── Battery PIN guard ─────────────────────────────────────────────────────────
