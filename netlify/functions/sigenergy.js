@@ -322,7 +322,7 @@ exports.handler = async (event) => {
         const modeInt = parseInt(mode, 10);
         if (isNaN(modeInt)) throw new Error('mode must be a number (0, 1, or 3)');
 
-        const UI_TO_CONSUMER = { 0: 0, 1: 5, 3: 7 };
+        const UI_TO_CONSUMER = { 0: 0, 1: 5, 2: 1, 3: 7, 4: 2 };  // 2=Sigen AI, 4=TOU (consumer operationMode 2)
         const operationMode  = UI_TO_CONSUMER[modeInt];
         if (operationMode === undefined) throw new Error(`Mode ${modeInt} is not supported`);
 
