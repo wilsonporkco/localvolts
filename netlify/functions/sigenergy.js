@@ -276,11 +276,34 @@ exports.handler = async (event) => {
         result = await sigenGet(token, `/openapi/systems/${systemId}/summary`, { systemId });
         break;
 
-      case 'energyFlow':
-        // GET /openapi/systems/{systemId}/energyFlow
+      case 'energyFlow': {
+        // Consumer API: GET device/sigen/station/energyflow?id={stationId} (no rate limit)
         if (!systemId) throw new Error('systemId required for action=energyFlow');
-        result = await sigenGet(token, `/openapi/systems/${systemId}/energyFlow`, { systemId });
+        const efUser = process.env.SIGEN_USERNAME || params.sigenUsername;
+        const efPass = process.env.SIGEN_PASSWORD || params.sigenPassword;
+        if (efUser && efPass) {
+          const efToken   = await getConsumerToken(efUser, efPass);
+          const efStation = process.env.SIGEN_CONSUMER_STATION_ID || _consumerStationId;
+          const efId      = efStation || systemId;
+          const efRes     = await fetch(`${CBASE}/device/sigen/station/energyflow?id=${efId}`, {
+            headers: { 'Authorization': `Bearer ${efToken}` }
+          });
+          const efJson    = await efRes.json();
+          // Normalise consumer fields to match developer API field names the UI expects
+          const d = efJson.data || efJson;
+          result = { code: 0, data: {
+            batterySoc:   d.batterySoc  ?? d.soc,
+            batteryPower: d.batteryPower ?? d.storagePower,
+            gridPower:    d.gridPower   ?? d.buySellPower,
+            pvPower:      d.pvPower,
+            loadPower:    d.loadPower   ?? d.acPower
+          }};
+        } else {
+          // Fallback to developer API
+          result = await sigenGet(token, `/openapi/systems/${systemId}/energyFlow`, { systemId });
+        }
         break;
+      }
 
       case 'deviceRealtime':
         // GET /openapi/systems/{systemId}/devices/{serialNumber}/realtimeInfo
