@@ -309,12 +309,11 @@ exports.handler = async (event) => {
     const wasCharging = prevLog.action === 'grid_charge';
     const wasSelling  = prevLog.action === 'feed_in';
 
+    // 5 ── Decide and act — always set mode regardless of previous state
     if (canSell && !sellFloor) {
       // ── FEED-IN / SELL ────────────────────────────────────────────────────
-      // Sell rule has priority — export price is above threshold and battery has enough charge
       logEntry.action = 'feed_in';
       logEntry.reason = `Export ${exportPrice.toFixed(2)} c/kWh ≥ sell threshold ${sellThreshold} c/kWh, SOC ${soc.toFixed(1)}% > floor ${sellMinSoc}%`;
-
       const modeResult = await consumerSetMode(5);  // 5 = Fully Fed to Grid
       logEntry.cmdResult = modeResult;
 
@@ -350,34 +349,16 @@ exports.handler = async (event) => {
       }
       logEntry.cmdResult = cmdResult;
 
-    } else if (!isCheap && !canSell && (wasCharging || wasSelling)) {
-      // ── RETURN TO SELF-CONSUMPTION (was active, conditions gone) ──────────
-      logEntry.action = 'self_consume';
-      logEntry.reason = `Conditions no longer met — returning to self-consumption`;
-      const modeResult = await consumerSetMode(0);  // 0 = Maximum Self-Powered
-      logEntry.cmdResult = modeResult;
-
-    } else if (socTooHigh && wasCharging) {
-      // ── BATTERY FULL — STOP GRID CHARGE ──────────────────────────────────
-      logEntry.action = 'self_consume';
-      logEntry.reason = `SOC ${soc.toFixed(1)}% reached max ${maxSoc}% — stopping grid charge`;
-      const modeResult2 = await consumerSetMode(0);
-      logEntry.cmdResult = modeResult2;
-
     } else {
-      // ── NO ACTION ────────────────────────────────────────────────────────
-      logEntry.action = prevLog.action === 'error' ? 'none' : (prevLog.action || 'none');
-      if (!isCheap && !canSell) {
-        logEntry.reason = `Price ${importPrice.toFixed(2)} c/kWh above threshold — self-consumption`;
-        // Always ensure self-consume mode when no action needed and price is high
-        if (prevLog.action === 'grid_charge' || prevLog.action === 'feed_in' || prevLog.action === 'error') {
-          logEntry.action = 'self_consume';
-          const modeResult3 = await consumerSetMode(0);
-          logEntry.cmdResult = modeResult3;
-        }
+      // ── DEFAULT: Time of Use — use configured TOU schedule ────────────────
+      logEntry.action = 'self_consume';
+      if (socTooHigh) {
+        logEntry.reason = `SOC ${soc.toFixed(1)}% ≥ max ${maxSoc}% — returning to TOU`;
       } else {
-        logEntry.reason = `No action required`;
+        logEntry.reason = `Price ${importPrice.toFixed(2)} c/kWh > threshold — returning to TOU`;
       }
+      const modeResult = await consumerSetMode(2);  // 2 = Time of Use
+      logEntry.cmdResult = modeResult;
     }
 
   } catch (err) {
