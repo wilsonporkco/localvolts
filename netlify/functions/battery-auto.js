@@ -248,13 +248,20 @@ exports.handler = async () => {
       return { statusCode: 200 };
     }
 
-    // 3 ── Get current SOC from Sigenergy
-    const flowJson = await sigenGet(`/openapi/systems/${systemId}/energyFlow`, { systemId });
-    if (flowJson.code !== 0) throw new Error(`energyFlow error (code ${flowJson.code}): ${flowJson.msg}`);
-
-    let flow = flowJson.data;
+    // 3 ── Get current SOC via consumer API (avoids developer API access restrictions)
+    const cTok      = await getConsumerToken();
+    const cStation  = await getConsumerStationId(cTok);
+    const flowRes   = await fetch(`${CBASE}/device/sigen/station/energyflow?id=${cStation}`, {
+      headers: { 'Authorization': `Bearer ${cTok}` }
+    });
+    const flowText  = await flowRes.text();
+    let flowJson;
+    try { flowJson = JSON.parse(flowText); } catch(e) {
+      throw new Error('energyFlow JSON parse error: ' + flowText.slice(0, 100));
+    }
+    let flow = flowJson.data || flowJson;
     if (typeof flow === 'string') flow = JSON.parse(flow);
-    const soc = parseFloat(flow.batterySoc ?? flow.soc ?? -1);
+    const soc = parseFloat(flow.batterySoc ?? flow.soc ?? flow.storageSoc ?? -1);
 
     logEntry.soc = soc;
 
@@ -298,9 +305,31 @@ exports.handler = async () => {
       logEntry.action = 'grid_charge';
       logEntry.reason = `Import ${importPrice.toFixed(2)} c/kWh ≤ threshold ${threshold} c/kWh, SOC ${soc.toFixed(1)}% < max ${maxSoc}%`;
 
-      // Grid charge via TOU mode (operationMode 2) — requires TOU rules configured
-      // in the Sigenergy app to charge from grid during the relevant time slot.
-      const cmdResult = await consumerSetMode(2);  // 2 = TOU
+      // Grid charge: find the 'GridCharge' custom energy profile and activate it
+      const cTok3       = await getConsumerToken();
+      const cStation3   = await getConsumerStationId(cTok3);
+      const modesRes    = await fetch(`${CBASE}/device/energy-profile/mode/all/${cStation3}`, {
+        headers: { 'Authorization': `Bearer ${cTok3}` }
+      });
+      const modesJson   = await modesRes.json();
+      const profiles    = (modesJson.data && modesJson.data.energyProfileItems) || [];
+      const gcProfile   = profiles.find(function(p) {
+        return p.name && p.name.toLowerCase().replace(/\s/g,'') === 'gridcharge';
+      });
+      let cmdResult;
+      if (gcProfile) {
+        // Activate GridCharge custom profile (operationMode 9 = custom, profileId from app)
+        cmdResult = await fetch(`${CBASE}/device/energy-profile/mode`, {
+          method:  'PUT',
+          headers: { 'Authorization': `Bearer ${cTok3}`, 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ stationId: cStation3, operationMode: 9, profileId: gcProfile.profileId })
+        }).then(function(r){ return r.json(); });
+        logEntry.profileId = gcProfile.profileId;
+      } else {
+        // Fallback: TOU mode
+        cmdResult = await consumerSetMode(2);
+        logEntry.reason += ' (GridCharge profile not found — used TOU fallback)';
+      }
       logEntry.cmdResult = cmdResult;
 
     } else if ((wasCharging || wasSelling) && (!isCheap || socTooHigh) && (!canSell || sellFloor)) {
