@@ -28,9 +28,10 @@ function encryptSigenPassword(password) {
   return cipher.update(password, 'utf8', 'base64') + cipher.final('base64');
 }
 
-// ── Consumer API token cache ──────────────────────────────────────────────────
-let _consumerToken  = null;
-let _consumerExpiry = 0;
+// ── Consumer API token + stationId cache ─────────────────────────────────────
+let _consumerToken     = null;
+let _consumerExpiry    = 0;
+let _consumerStationId = null;   // cached after first lookup
 
 async function getConsumerToken(username, password) {
   if (_consumerToken && Date.now() < _consumerExpiry - 300_000) return _consumerToken;
@@ -331,14 +332,17 @@ exports.handler = async (event) => {
 
         const cToken2 = await getConsumerToken(sigenUser2, sigenPass2);
 
-        // Consumer API uses its own numeric stationId, not the developer systemId.
-        // Fetch it from device/owner/station/home.
-        const stationRes  = await fetch(`${CBASE}/device/owner/station/home`, {
-          headers: { 'Authorization': `Bearer ${cToken2}` }
-        });
-        const stationJson = await stationRes.json();
-        const consumerStationId = stationJson.data && stationJson.data.stationId;
-        if (!consumerStationId) throw new Error('Could not get consumer stationId: ' + JSON.stringify(stationJson));
+        // Consumer stationId: use env var, in-memory cache, or fetch from API.
+        let consumerStationId = process.env.SIGEN_CONSUMER_STATION_ID || _consumerStationId;
+        if (!consumerStationId) {
+          const stationRes  = await fetch(`${CBASE}/device/owner/station/home`, {
+            headers: { 'Authorization': `Bearer ${cToken2}` }
+          });
+          const stationJson = await stationRes.json();
+          consumerStationId = stationJson.data && stationJson.data.stationId;
+          if (!consumerStationId) throw new Error('Could not get consumer stationId: ' + JSON.stringify(stationJson));
+          _consumerStationId = consumerStationId;   // cache for subsequent calls
+        }
         console.log('[sigenergy] consumerStationId:', consumerStationId);
 
         const smPayload = { stationId: consumerStationId, operationMode, profileId: -1 };
