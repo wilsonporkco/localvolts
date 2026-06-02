@@ -282,21 +282,29 @@ exports.handler = async (event) => {
         const efUser = process.env.SIGEN_USERNAME || params.sigenUsername;
         const efPass = process.env.SIGEN_PASSWORD || params.sigenPassword;
         if (efUser && efPass) {
-          const efToken   = await getConsumerToken(efUser, efPass);
-          const efStation = process.env.SIGEN_CONSUMER_STATION_ID || _consumerStationId;
-          const efId      = efStation || systemId;
-          const efRes     = await fetch(`${CBASE}/device/sigen/station/energyflow?id=${efId}`, {
+          const efToken = await getConsumerToken(efUser, efPass);
+          // Get consumer stationId — use env var, cache, or fetch from API
+          if (!_consumerStationId) {
+            const stRes  = await fetch(`${CBASE}/device/owner/station/home`, {
+              headers: { 'Authorization': `Bearer ${efToken}` }
+            });
+            const stJson = await stRes.json();
+            _consumerStationId = stJson.data && stJson.data.stationId;
+          }
+          const efId  = _consumerStationId;
+          if (!efId) throw new Error('Could not resolve consumer stationId for energyFlow');
+          const efRes  = await fetch(`${CBASE}/device/sigen/station/energyflow?id=${efId}`, {
             headers: { 'Authorization': `Bearer ${efToken}` }
           });
-          const efJson    = await efRes.json();
-          // Normalise consumer fields to match developer API field names the UI expects
+          const efJson = await efRes.json();
+          console.log('[sigenergy] consumer energyFlow raw:', JSON.stringify(efJson).slice(0, 300));
           const d = efJson.data || efJson;
           result = { code: 0, data: {
-            batterySoc:   d.batterySoc  ?? d.soc,
-            batteryPower: d.batteryPower ?? d.storagePower,
-            gridPower:    d.gridPower   ?? d.buySellPower,
+            batterySoc:   d.batterySoc   ?? d.soc,
+            batteryPower: d.batteryPower  ?? d.storagePower,
+            gridPower:    d.buySellPower  ?? d.gridPower,
             pvPower:      d.pvPower,
-            loadPower:    d.loadPower   ?? d.acPower
+            loadPower:    d.loadPower     ?? d.acPower
           }};
         } else {
           // Fallback to developer API
