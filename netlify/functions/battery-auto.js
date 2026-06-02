@@ -350,27 +350,31 @@ exports.handler = async (event) => {
       }
       logEntry.cmdResult = cmdResult;
 
-    } else if ((wasCharging || wasSelling) && (!isCheap || socTooHigh) && (!canSell || sellFloor)) {
-      // ── RETURN TO SELF-CONSUMPTION ───────────────────────────────────────
+    } else if (!isCheap && !canSell && (wasCharging || wasSelling)) {
+      // ── RETURN TO SELF-CONSUMPTION (was active, conditions gone) ──────────
       logEntry.action = 'self_consume';
-      if (socTooHigh) {
-        logEntry.reason = `SOC ${soc.toFixed(1)}% reached max ${maxSoc}% — stopping grid charge`;
-      } else if (sellFloor) {
-        logEntry.reason = `SOC ${soc.toFixed(1)}% dropped to sell floor ${sellStopSoc}% — stopping feed-in`;
-      } else {
-        logEntry.reason = `Conditions no longer met — returning to self-consumption`;
-      }
-
+      logEntry.reason = `Conditions no longer met — returning to self-consumption`;
       const modeResult = await consumerSetMode(0);  // 0 = Maximum Self-Powered
       logEntry.cmdResult = modeResult;
 
+    } else if (socTooHigh && wasCharging) {
+      // ── BATTERY FULL — STOP GRID CHARGE ──────────────────────────────────
+      logEntry.action = 'self_consume';
+      logEntry.reason = `SOC ${soc.toFixed(1)}% reached max ${maxSoc}% — stopping grid charge`;
+      const modeResult2 = await consumerSetMode(0);
+      logEntry.cmdResult = modeResult2;
+
     } else {
       // ── NO ACTION ────────────────────────────────────────────────────────
-      logEntry.action = 'none';
-      if (socTooHigh) {
-        logEntry.reason = `SOC ${soc.toFixed(1)}% at/above max ${maxSoc}% — no action needed`;
-      } else if (!isCheap) {
-        logEntry.reason = `Price ${importPrice.toFixed(2)} c/kWh > threshold ${threshold} c/kWh — not charging`;
+      logEntry.action = prevLog.action === 'error' ? 'none' : (prevLog.action || 'none');
+      if (!isCheap && !canSell) {
+        logEntry.reason = `Price ${importPrice.toFixed(2)} c/kWh above threshold — self-consumption`;
+        // Always ensure self-consume mode when no action needed and price is high
+        if (prevLog.action === 'grid_charge' || prevLog.action === 'feed_in' || prevLog.action === 'error') {
+          logEntry.action = 'self_consume';
+          const modeResult3 = await consumerSetMode(0);
+          logEntry.cmdResult = modeResult3;
+        }
       } else {
         logEntry.reason = `No action required`;
       }
