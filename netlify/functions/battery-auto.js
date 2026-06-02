@@ -370,5 +370,20 @@ exports.handler = async (event) => {
   // 6 ── Write log to Supabase (also keeps last-run visible in dashboard)
   await sbSet('batt_auto_log', logEntry);
 
+  // 7 ── Append to rolling 24h history (max 288 readings @ 5-min intervals)
+  try {
+    const hist = await sbGet('batt_history') || [];
+    hist.push({
+      ts:          logEntry.ts,
+      soc:         logEntry.soc,
+      price:       logEntry.price,
+      exportPrice: logEntry.exportPrice,
+      action:      logEntry.action
+    });
+    // Keep last 288 entries (24h at 5-min intervals)
+    if (hist.length > 288) hist.splice(0, hist.length - 288);
+    await sbSet('batt_history', hist);
+  } catch(e) { console.log('[battery-auto] history write failed:', e.message); }
+
   return { statusCode: 200 };
 };
