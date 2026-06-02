@@ -4207,6 +4207,8 @@ function _activateAutoMode() {
     try { localStorage.setItem('batt_rule_enabled','true'); } catch(e){}
     updateRuleToggleUI();
     startAutoRuleTimer();
+    // Trigger an immediate backend run rather than waiting up to 5 min
+    fetch('/.netlify/functions/battery-auto', { method: 'POST' }).catch(function(){});
   }
   updateModeTiles('auto');
   var statusEl = document.getElementById('battery-mode-status');
