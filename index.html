@@ -4638,7 +4638,7 @@ async function checkAutoRule() {
     // Trigger backend rule execution after every price check when auto is enabled
     if (autoRuleEnabled) {
       var now = Date.now();
-      if (!window._lastAutoTrigger || now - window._lastAutoTrigger > 300000) { // max once per 5 min
+      if (!window._lastAutoTrigger || now - window._lastAutoTrigger > 120000) { // max once per 2 min
         window._lastAutoTrigger = now;
         fetch('/.netlify/functions/battery-auto', { method: 'POST' }).catch(function(){});
       }
