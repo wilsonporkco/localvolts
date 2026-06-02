@@ -207,7 +207,9 @@ async function getLvPrices(nmi) {
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
-exports.handler = async () => {
+exports.handler = async (event) => {
+  // Support both scheduled runs and manual HTTP triggers (POST from UI)
+  if (event && event.httpMethod === 'OPTIONS') return { statusCode: 200, body: '' };
   const startTime = new Date().toISOString();
   const logEntry  = { ts: startTime, action: 'none', reason: '', error: null };
 
