@@ -126,37 +126,69 @@ async function sigenPost(path, body) {
   return res.json();
 }
 
-// ── REST battery command ──────────────────────────────────────────────────────
-// Uses POST /openapi/system/battery/command (no MQTT needed)
-async function sendBatteryCommand(token, commandPayload) {
-  const body = {
-    accessToken: token,
-    commands:    [commandPayload]
-  };
-  const res = await fetch(`${BASE}/openapi/system/battery/command`, {
+// ── Consumer API (mySigen app credentials) ────────────────────────────────────
+// Uses username/password with AES encryption — bypasses developer API restrictions.
+const crypto           = require('crypto');
+const CBASE            = process.env.SIGEN_CONSUMER_BASE_URL || 'https://api-aus.sigencloud.com';
+const SIGEN_USERNAME   = process.env.SIGEN_USERNAME;
+const SIGEN_PASSWORD   = process.env.SIGEN_PASSWORD;
+const CONSUMER_STATION = process.env.SIGEN_CONSUMER_STATION_ID;  // numeric stationId
+
+let _consumerToken     = null;
+let _consumerExpiry    = 0;
+let _consumerStationId = CONSUMER_STATION || null;
+
+function encryptSigenPassword(password) {
+  const key    = Buffer.from('sigensigensigenp', 'utf8');
+  const iv     = Buffer.from('sigensigensigenp', 'latin1');
+  const cipher = crypto.createCipheriv('aes-128-cbc', key, iv);
+  return cipher.update(password, 'utf8', 'base64') + cipher.final('base64');
+}
+
+async function getConsumerToken() {
+  if (_consumerToken && Date.now() < _consumerExpiry - 300_000) return _consumerToken;
+  if (!SIGEN_USERNAME || !SIGEN_PASSWORD) throw new Error('SIGEN_USERNAME / SIGEN_PASSWORD not set');
+  const encPwd = encryptSigenPassword(SIGEN_PASSWORD);
+  const res = await fetch(`${CBASE}/auth/oauth/token`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body:    JSON.stringify(body)
+    headers: {
+      'Content-Type':  'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + Buffer.from('sigen:sigen').toString('base64')
+    },
+    body: new URLSearchParams({ username: SIGEN_USERNAME, password: encPwd, grant_type: 'password' }).toString()
   });
-  if (res.status === 429) throw new Error('Sigenergy rate limit hit');
+  const json = await res.json();
+  if (!json.data || !json.data.access_token) throw new Error(`Consumer auth failed: ${JSON.stringify(json)}`);
+  _consumerToken  = json.data.access_token;
+  _consumerExpiry = Date.now() + ((json.data.expires_in ?? 3600) * 1000);
+  return _consumerToken;
+}
 
-  // Handle empty body (204 No Content or empty 200)
-  const text = await res.text();
-  if (!text || !text.trim()) {
-    if (res.ok) return { success: true };
-    throw new Error(`Battery command failed (HTTP ${res.status}) — empty response`);
-  }
+async function getConsumerStationId(cToken) {
+  if (_consumerStationId) return _consumerStationId;
+  const res  = await fetch(`${CBASE}/device/owner/station/home`, {
+    headers: { 'Authorization': `Bearer ${cToken}` }
+  });
+  const json = await res.json();
+  const id   = json.data && json.data.stationId;
+  if (!id) throw new Error('Could not get consumer stationId: ' + JSON.stringify(json));
+  _consumerStationId = id;
+  return id;
+}
 
-  let json;
-  try { json = JSON.parse(text); } catch (e) {
-    if (res.ok) return { success: true, raw: text.slice(0, 200) };
-    throw new Error(`Battery command failed (HTTP ${res.status}): ${text.slice(0, 200)}`);
-  }
-
+async function consumerSetMode(operationMode) {
+  const cToken    = await getConsumerToken();
+  const stationId = await getConsumerStationId(cToken);
+  const res = await fetch(`${CBASE}/device/energy-profile/mode`, {
+    method:  'PUT',
+    headers: { 'Authorization': `Bearer ${cToken}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ stationId, operationMode, profileId: -1 })
+  });
+  const json = await res.json();
   if (json.code !== 0 && json.code !== undefined) {
-    throw new Error(`Battery command rejected (code ${json.code}): ${json.msg || 'unknown'}`);
+    throw new Error(`Set mode failed (code ${json.code}): ${json.msg || 'unknown'}`);
   }
-  return { success: true, reply: json };
+  return json;
 }
 
 // ── LocalVolts price fetch ────────────────────────────────────────────────────
@@ -258,10 +290,7 @@ exports.handler = async () => {
       logEntry.action = 'feed_in';
       logEntry.reason = `Export ${exportPrice.toFixed(2)} c/kWh ≥ sell threshold ${sellThreshold} c/kWh, SOC ${soc.toFixed(1)}% > floor ${sellMinSoc}%`;
 
-      const modeResult = await sigenPost(
-        `/openapi/systems/${systemId}/ems/energyStorageOperationMode`,
-        { systemId, energyStorageOperationMode: 1 }  // 1 = Full Feed-in
-      );
+      const modeResult = await consumerSetMode(5);  // 5 = Fully Fed to Grid
       logEntry.cmdResult = modeResult;
 
     } else if (isCheap && !socTooHigh && !socTooLow) {
@@ -269,16 +298,9 @@ exports.handler = async () => {
       logEntry.action = 'grid_charge';
       logEntry.reason = `Import ${importPrice.toFixed(2)} c/kWh ≤ threshold ${threshold} c/kWh, SOC ${soc.toFixed(1)}% < max ${maxSoc}%`;
 
-      const token  = await getToken();
-      const cmd    = {
-        systemId,
-        activeMode:         'charge',
-        startTime:          Math.floor(Date.now() / 1000),
-        duration:           10,
-        chargePriorityType: 'GRID'
-      };
-      if (chargeKw) cmd.chargingPower = chargeKw;
-      const cmdResult = await sendBatteryCommand(token, cmd);
+      // Grid charge via TOU mode (operationMode 2) — requires TOU rules configured
+      // in the Sigenergy app to charge from grid during the relevant time slot.
+      const cmdResult = await consumerSetMode(2);  // 2 = TOU
       logEntry.cmdResult = cmdResult;
 
     } else if ((wasCharging || wasSelling) && (!isCheap || socTooHigh) && (!canSell || sellFloor)) {
@@ -292,13 +314,7 @@ exports.handler = async () => {
         logEntry.reason = `Conditions no longer met — returning to self-consumption`;
       }
 
-      const token      = await getToken();
-      const modeResult = await sendBatteryCommand(token, {
-        systemId,
-        activeMode: 'selfConsumption',
-        startTime:  Math.floor(Date.now() / 1000),
-        duration:   10
-      });
+      const modeResult = await consumerSetMode(0);  // 0 = Maximum Self-Powered
       logEntry.cmdResult = modeResult;
 
     } else {
