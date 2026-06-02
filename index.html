@@ -873,6 +873,22 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                   <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Export all solar<br>to grid</div>
                 </div>
 
+                <!-- Sigen AI tile -->
+                <div id="mode-tile-2" onclick="setBatteryMode(2)"
+                     style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
+                  <div style="font-size:20px;margin-bottom:5px;">🧠</div>
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Sigen AI</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Smart auto<br>optimise</div>
+                </div>
+
+                <!-- TOU tile -->
+                <div id="mode-tile-4" onclick="setBatteryMode(4)"
+                     style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
+                  <div style="font-size:20px;margin-bottom:5px;">🕐</div>
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Time of Use</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Rules set<br>in Sigen app</div>
+                </div>
+
               </div>
 
               <div id="battery-mode-status" style="font-family:var(--mono);font-size:11px;color:var(--text3);min-height:18px;"></div>
@@ -4188,7 +4204,7 @@ async function _setBatteryMode(mode) {
   var systemId = (document.getElementById('battery-system-select')||{value:''}).value || sigenActiveSystemId;
   if (!systemId) { alert('No system selected.'); return; }
 
-  var MODES    = { 0:'Max Self-Use', 1:'Full Feed-in to Grid', 2:'Time of Use', 3:'Backup / Emergency' };
+  var MODES    = { 0:'Max Self-Use', 1:'Full Feed-in to Grid', 2:'Sigen AI', 3:'Backup / Emergency', 4:'Time of Use' };
   var statusEl = document.getElementById('battery-mode-status');
   if (statusEl) { statusEl.textContent = 'Setting mode…'; statusEl.style.color='var(--text3)'; }
 
