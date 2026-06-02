@@ -2,25 +2,53 @@
 // Netlify function: /.netlify/functions/sigenergy
 // Sigenergy Cloud OpenAPI proxy — Localvolts Energy Dashboard
 //
-// Place this file at:  netlify/functions/sigenergy.js
+// Developer API credentials (for data/read):
+//   SIGEN_APP_KEY / SIGEN_APP_SECRET  (or pass in request body)
 //
-// Credentials can be supplied two ways (function checks env vars first):
-//   • Netlify env vars (preferred):  SIGEN_APP_KEY  /  SIGEN_APP_SECRET
-//   • POST body params:              appKey         /  appSecret
+// Consumer API credentials (for mode control — uses mySigen app login):
+//   SIGEN_USERNAME / SIGEN_PASSWORD
 //
-// Region default: ANZ (Australia & New Zealand) — https://api-aus.sigencloud.com
-// Override via env var:  SIGEN_BASE_URL
-// MQTT broker override:  SIGEN_MQTT_HOST  (default: mqtt-aus.sigencloud.com)
-//
-// Rate limits: Sigenergy allows ~1 req/endpoint/5 min for third-party keys.
-// The function caches the bearer token in memory for warm invocations.
+// Region default: ANZ — https://api-aus.sigencloud.com
+// Consumer API base: https://api-apac.sigencloud.com (override: SIGEN_CONSUMER_BASE_URL)
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use strict';
 
-const BASE      = process.env.SIGEN_BASE_URL  || 'https://api-aus.sigencloud.com';
-const MQTT_HOST = process.env.SIGEN_MQTT_HOST || 'mqtt-aus.sigencloud.com';
+const crypto    = require('crypto');
+const BASE      = process.env.SIGEN_BASE_URL          || 'https://api-aus.sigencloud.com';
+const CBASE     = process.env.SIGEN_CONSUMER_BASE_URL || 'https://api-apac.sigencloud.com';
+const MQTT_HOST = process.env.SIGEN_MQTT_HOST         || 'mqtt-aus.sigencloud.com';
 const MQTT_PORT = parseInt(process.env.SIGEN_MQTT_PORT || '1883', 10);
+
+// ── Consumer API: AES-CBC password encryption (key/IV = "sigensigensigenp") ──
+function encryptSigenPassword(password) {
+  const key    = Buffer.from('sigensigensigenp', 'utf8');
+  const iv     = Buffer.from('sigensigensigenp', 'latin1');
+  const cipher = crypto.createCipheriv('aes-128-cbc', key, iv);
+  return cipher.update(password, 'utf8', 'base64') + cipher.final('base64');
+}
+
+// ── Consumer API token cache ──────────────────────────────────────────────────
+let _consumerToken  = null;
+let _consumerExpiry = 0;
+
+async function getConsumerToken(username, password) {
+  if (_consumerToken && Date.now() < _consumerExpiry - 300_000) return _consumerToken;
+  const encPwd = encryptSigenPassword(password);
+  const res = await fetch(`${CBASE}/auth/oauth/token`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + Buffer.from('sigen:sigen').toString('base64')
+    },
+    body: new URLSearchParams({ username, password: encPwd, grant_type: 'password' }).toString()
+  });
+  const json = await res.json();
+  if (!json.data || !json.data.access_token) throw new Error(`Consumer auth failed: ${JSON.stringify(json)}`);
+  _consumerToken  = json.data.access_token;
+  _consumerExpiry = Date.now() + ((json.data.expires_in ?? 3600) * 1000);
+  return _consumerToken;
+}
 
 // ── In-memory token cache (survives warm Netlify function instances) ──────────
 let _cachedToken  = null;
@@ -263,39 +291,57 @@ exports.handler = async (event) => {
         break;
 
       // ── Control ──────────────────────────────────────────────────────────
-      case 'getMode':
-        // GET /openapi/instruction/{systemId}/settings
-        // Returns: { data: { energyStorageOperationMode: 0|1|2|3 } }
-        // Rate limit: once per 5 minutes per station
+      case 'getMode': {
+        // Consumer API: GET device/energy-profile/mode/current/{stationId}
+        // Uses mySigen username/password (SIGEN_USERNAME / SIGEN_PASSWORD env vars)
         if (!systemId) throw new Error('systemId required for action=getMode');
-        result = await sigenGet(token, `/openapi/instruction/${systemId}/settings`);
-        console.log('[sigenergy] getMode response:', JSON.stringify(result));
+        const sigenUser = process.env.SIGEN_USERNAME || params.sigenUsername;
+        const sigenPass = process.env.SIGEN_PASSWORD || params.sigenPassword;
+        if (!sigenUser || !sigenPass) throw new Error('SIGEN_USERNAME / SIGEN_PASSWORD not set — needed for getMode');
+        const cToken = await getConsumerToken(sigenUser, sigenPass);
+        const gmRes  = await fetch(`${CBASE}/device/energy-profile/mode/current/${systemId}`, {
+          headers: { 'Authorization': `Bearer ${cToken}` }
+        });
+        const gmJson = await gmRes.json();
+        console.log('[sigenergy] getMode response:', JSON.stringify(gmJson));
+        // Normalise: map consumer currentMode to energyStorageOperationMode for UI compatibility
+        const CONSUMER_TO_UI = { 0: 0, 5: 1, 7: 3 };  // 0=self-use, 5=feed-in, 7=backup
+        const currentMode = gmJson.data ? gmJson.data.currentMode : null;
+        result = { code: 0, data: { energyStorageOperationMode: CONSUMER_TO_UI[currentMode] ?? currentMode } };
         break;
+      }
 
       case 'setMode': {
-        // MQTT: topic openapi/instruction/command (Battery Command)
-        // HTTP PUT /openapi/instruction/settings is restricted to certain Sigenergy partner tiers.
-        // mode values: 0 = Max Self-Consumption, 1 = Full Feed-in to Grid, 3 = Backup/Emergency
+        // Consumer API: PUT device/energy-profile/mode
+        // Uses mySigen username/password — bypasses developer API access restrictions.
+        // UI mode → consumer operationMode: 0→0 (self-use), 1→5 (feed-in), 3→7 (backup/EMS)
         if (!systemId) throw new Error('systemId required for action=setMode');
         if (mode === undefined || mode === null) throw new Error('mode required for action=setMode');
         const modeInt = parseInt(mode, 10);
         if (isNaN(modeInt)) throw new Error('mode must be a number (0, 1, or 3)');
 
-        const MODE_MAP = { 0: 'selfConsumption', 1: 'selfConsumption-grid', 3: 'idle' };
-        const activeMode = MODE_MAP[modeInt];
-        if (!activeMode) throw new Error(`Mode ${modeInt} is not supported`);
+        const UI_TO_CONSUMER = { 0: 0, 1: 5, 3: 7 };
+        const operationMode  = UI_TO_CONSUMER[modeInt];
+        if (operationMode === undefined) throw new Error(`Mode ${modeInt} is not supported`);
 
-        const cmd = {
-          systemId,
-          activeMode,
-          startTime: Math.floor(Date.now() / 1000),
-          duration:  1440   // 24 hours
-        };
-        console.log('[sigenergy] setMode → MQTT battery command:', JSON.stringify(cmd));
-        const mqttResult = await sendMqttBatteryCommand(token, cmd, appKey, appSecret);
-        console.log('[sigenergy] setMode MQTT result:', JSON.stringify(mqttResult));
-        // Normalise to standard { code, data } format so the UI's sigenCall doesn't error
-        result = { code: 0, msg: 'success', data: mqttResult };
+        const sigenUser2 = process.env.SIGEN_USERNAME || params.sigenUsername;
+        const sigenPass2 = process.env.SIGEN_PASSWORD || params.sigenPassword;
+        if (!sigenUser2 || !sigenPass2) throw new Error('SIGEN_USERNAME / SIGEN_PASSWORD not set — needed for setMode');
+
+        const cToken2   = await getConsumerToken(sigenUser2, sigenPass2);
+        const smPayload = { stationId: systemId, operationMode, profileId: -1 };
+        console.log('[sigenergy] setMode consumer PUT:', JSON.stringify(smPayload));
+        const smRes  = await fetch(`${CBASE}/device/energy-profile/mode`, {
+          method:  'PUT',
+          headers: { 'Authorization': `Bearer ${cToken2}`, 'Content-Type': 'application/json' },
+          body:    JSON.stringify(smPayload)
+        });
+        const smJson = await smRes.json();
+        console.log('[sigenergy] setMode response:', JSON.stringify(smJson));
+        if (smJson.code !== 0 && smJson.code !== undefined) {
+          throw new Error(`Set mode failed (code ${smJson.code}): ${smJson.msg || 'unknown'}`);
+        }
+        result = { code: 0, msg: 'success', data: smJson };
         break;
       }
 
