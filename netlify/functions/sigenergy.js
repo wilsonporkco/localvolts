@@ -101,21 +101,25 @@ async function sigenPut(token, path, body) {
 //   'charge'        — force grid charge (chargePriorityType: 'GRID' or 'SOLAR')
 //   'discharge'     — force discharge to loads/grid
 //   'selfConsume'   — return to normal self-consumption mode
-function sendMqttBatteryCommand(token, commandPayload) {
+function sendMqttBatteryCommand(token, commandPayload, appKey, appSecret) {
   return new Promise((resolve, reject) => {
     let mqtt;
     try { mqtt = require('mqtt'); } catch (e) {
       return reject(new Error('mqtt package not available — add it to netlify/functions/package.json'));
     }
 
-    const clientId = `sigen-proxy-${Date.now()}`;
-    const client   = mqtt.connect({
-      host:      MQTT_HOST,
-      port:      MQTT_PORT,
-      protocol:  'mqtt',
+    const clientId  = `sigen-proxy-${Date.now()}`;
+    // mqtts (MQTT over TLS) on port 8883 — confirmed from Sigenergy subscription details
+    const mqttPort  = parseInt(process.env.SIGEN_MQTT_PORT || '8883', 10);
+    const brokerUrl = `mqtts://${MQTT_HOST}:${mqttPort}`;
+    // Use appKey/appSecret as MQTT credentials (same as data subscription connection)
+    const mqttUser  = appKey  || process.env.SIGEN_APP_KEY  || token;
+    const mqttPass  = appSecret || process.env.SIGEN_APP_SECRET || '';
+    console.log('[sigenergy] MQTT connecting:', brokerUrl, 'user:', mqttUser);
+    const client    = mqtt.connect(brokerUrl, {
       clientId,
-      username:  token,        // Bearer token used as MQTT username
-      password:  '',
+      username:  mqttUser,
+      password:  mqttPass,
       clean:     true,
       connectTimeout: 10_000,
       reconnectPeriod: 0       // no auto-reconnect in a serverless context
@@ -288,7 +292,7 @@ exports.handler = async (event) => {
           duration:  1440   // 24 hours
         };
         console.log('[sigenergy] setMode → MQTT battery command:', JSON.stringify(cmd));
-        const mqttResult = await sendMqttBatteryCommand(token, cmd);
+        const mqttResult = await sendMqttBatteryCommand(token, cmd, appKey, appSecret);
         console.log('[sigenergy] setMode MQTT result:', JSON.stringify(mqttResult));
         // Normalise to standard { code, data } format so the UI's sigenCall doesn't error
         result = { code: 0, msg: 'success', data: mqttResult };
