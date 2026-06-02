@@ -4589,7 +4589,7 @@ async function checkAutoRule() {
 
     var ts = new Date().toLocaleTimeString('en-AU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
     var lcEl = document.getElementById('rule-last-check');
-    if (lcEl) lcEl.textContent = 'Last checked ' + ts;
+    if (lcEl) lcEl.textContent = 'Pricing checked at ' + ts;
 
     // Only show action status + alerts when auto rules is on
     if (!autoRuleEnabled) {
@@ -4633,6 +4633,15 @@ async function checkAutoRule() {
       setRuleStatus('✓ Self-consumption · import ' + importPrice.toFixed(1) + ' c/kWh', 'var(--text2)');
       if (cheapEl) cheapEl.style.display = 'none';
       if (sellEl)  sellEl.style.display  = 'none';
+    }
+
+    // Trigger backend rule execution after every price check when auto is enabled
+    if (autoRuleEnabled) {
+      var now = Date.now();
+      if (!window._lastAutoTrigger || now - window._lastAutoTrigger > 300000) { // max once per 5 min
+        window._lastAutoTrigger = now;
+        fetch('/.netlify/functions/battery-auto', { method: 'POST' }).catch(function(){});
+      }
     }
 
   } catch(e) {
