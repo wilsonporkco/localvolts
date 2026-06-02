@@ -325,20 +325,23 @@ exports.handler = async (event) => {
 
       // ── Control ──────────────────────────────────────────────────────────
       case 'getMode': {
-        // Consumer API: GET device/energy-profile/mode/current/{stationId}
-        // Uses mySigen username/password (SIGEN_USERNAME / SIGEN_PASSWORD env vars)
-        if (!systemId) throw new Error('systemId required for action=getMode');
-        const sigenUser = process.env.SIGEN_USERNAME || params.sigenUsername;
-        const sigenPass = process.env.SIGEN_PASSWORD || params.sigenPassword;
-        if (!sigenUser || !sigenPass) throw new Error('SIGEN_USERNAME / SIGEN_PASSWORD not set — needed for getMode');
-        const cToken = await getConsumerToken(sigenUser, sigenPass);
-        const gmRes  = await fetch(`${CBASE}/device/energy-profile/mode/current/${systemId}`, {
-          headers: { 'Authorization': `Bearer ${cToken}` }
+        // Consumer API: GET device/energy-profile/mode/current/{consumerStationId} (no rate limit)
+        const gmUser = process.env.SIGEN_USERNAME || params.sigenUsername;
+        const gmPass = process.env.SIGEN_PASSWORD || params.sigenPassword;
+        if (!gmUser || !gmPass) throw new Error('SIGEN_USERNAME / SIGEN_PASSWORD not set — needed for getMode');
+        const gmToken = await getConsumerToken(gmUser, gmPass);
+        // Resolve consumer stationId from cache or API
+        if (!_consumerStationId) {
+          const stRes  = await fetch(`${CBASE}/device/owner/station/home`, { headers: { 'Authorization': `Bearer ${gmToken}` } });
+          const stJson = await stRes.json();
+          _consumerStationId = stJson.data && stJson.data.stationId;
+        }
+        if (!_consumerStationId) throw new Error('Could not resolve consumer stationId');
+        const gmRes  = await fetch(`${CBASE}/device/energy-profile/mode/current/${_consumerStationId}`, {
+          headers: { 'Authorization': `Bearer ${gmToken}` }
         });
         const gmJson = await gmRes.json();
-        console.log('[sigenergy] getMode response:', JSON.stringify(gmJson));
-        // Normalise: map consumer currentMode to energyStorageOperationMode for UI compatibility
-        const CONSUMER_TO_UI = { 0: 0, 5: 1, 7: 3 };  // 0=self-use, 5=feed-in, 7=backup
+        const CONSUMER_TO_UI = { 0: 0, 1: 2, 2: 4, 5: 1, 7: 3, 9: 0 };
         const currentMode = gmJson.data ? gmJson.data.currentMode : null;
         result = { code: 0, data: { energyStorageOperationMode: CONSUMER_TO_UI[currentMode] ?? currentMode } };
         break;
