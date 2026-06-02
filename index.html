@@ -833,35 +833,84 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               <div id="soc-status-label" style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center;">—</div>
             </div>
 
-            <!-- Energy flow card -->
-            <div class="chart-card">
-              <div class="chart-title" style="margin-bottom:14px;">Energy Flow</div>
-              <div id="battery-flow" style="display:grid;grid-template-columns:1fr auto 1fr;grid-template-rows:auto auto auto;gap:8px 4px;align-items:center;">
-                <!-- Row 1: Solar -->
-                <div></div>
-                <div id="flow-pv" style="text-align:center;">
-                  <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:#f59e0b;text-transform:uppercase;margin-bottom:4px;">Solar</div>
-                  <div style="font-size:15px;font-weight:600;color:var(--text);" id="flow-pv-val">—</div>
-                  <div style="font-family:var(--mono);font-size:9px;color:var(--text3);">kW</div>
-                </div>
-                <div></div>
-                <!-- Row 2: Grid ←→ [House] ←→ Battery -->
-                <div id="flow-grid-block" style="text-align:center;background:#f8f9fb;border-radius:8px;padding:8px;">
-                  <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--text3);text-transform:uppercase;margin-bottom:4px;">Grid</div>
-                  <div style="font-size:15px;font-weight:600;" id="flow-grid-val">—</div>
-                  <div style="font-family:var(--mono);font-size:9px;color:var(--text3);" id="flow-grid-dir">kW</div>
-                </div>
-                <div style="text-align:center;background:linear-gradient(135deg,#eff6ff,#f0fdf4);border-radius:10px;padding:10px;border:2px solid #e0f2fe;">
-                  <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--accent);text-transform:uppercase;margin-bottom:4px;">Home</div>
-                  <div style="font-size:15px;font-weight:600;color:var(--text);" id="flow-load-val">—</div>
-                  <div style="font-family:var(--mono);font-size:9px;color:var(--text3);">kW</div>
-                </div>
-                <div id="flow-batt-block" style="text-align:center;background:#f8f9fb;border-radius:8px;padding:8px;">
-                  <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--text3);text-transform:uppercase;margin-bottom:4px;">Battery</div>
-                  <div style="font-size:15px;font-weight:600;" id="flow-batt-val">—</div>
-                  <div style="font-family:var(--mono);font-size:9px;color:var(--text3);" id="flow-batt-dir">kW</div>
-                </div>
-              </div>
+            <!-- Energy flow card — animated -->
+            <div class="chart-card" style="padding:14px 10px;">
+              <div class="chart-title" style="margin-bottom:8px;">Energy Flow</div>
+              <svg id="ef-svg" viewBox="0 0 340 260" style="width:100%;">
+                <defs>
+                  <filter id="ef-glow-y"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                  <filter id="ef-glow-g"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                  <filter id="ef-glow-r"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                  <style>
+                    @keyframes ef-dash{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
+                    @keyframes ef-rev{from{stroke-dashoffset:0}to{stroke-dashoffset:24}}
+                    .ef-fl{stroke-dasharray:8 14;animation:ef-dash 0.8s linear infinite}
+                    .ef-fl-rev{stroke-dasharray:8 14;animation:ef-rev 0.8s linear infinite}
+                    .ef-idle{opacity:0.15}
+                  </style>
+                </defs>
+                <!-- Wire bases -->
+                <path id="ef-wire-sh" d="M170,82 L170,148" stroke="#d97706" stroke-width="3" fill="none" stroke-linecap="round" class="ef-fl"/>
+                <path id="ef-wire-bh" d="M74,160 L132,178" stroke="#059669" stroke-width="3" fill="none" stroke-linecap="round" class="ef-idle"/>
+                <path id="ef-wire-gh" d="M266,160 L208,178" stroke="#dc2626" stroke-width="3" fill="none" stroke-linecap="round" class="ef-fl"/>
+                <!-- Solar particles -->
+                <g id="ef-cur-sh" filter="url(#ef-glow-y)">
+                  <circle r="5" fill="#fde68a"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0s"><mpath href="#ef-wire-sh"/></animateMotion></circle>
+                  <circle r="4" fill="#fbbf24"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0.3s"><mpath href="#ef-wire-sh"/></animateMotion></circle>
+                  <circle r="3" fill="#f59e0b"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0.6s"><mpath href="#ef-wire-sh"/></animateMotion></circle>
+                </g>
+                <!-- Battery particles -->
+                <g id="ef-cur-bh" filter="url(#ef-glow-g)" opacity="0">
+                  <circle r="5" fill="#6ee7b7"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0s"><mpath href="#ef-wire-bh"/></animateMotion></circle>
+                  <circle r="4" fill="#34d399"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0.3s"><mpath href="#ef-wire-bh"/></animateMotion></circle>
+                  <circle r="3" fill="#10b981"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0.6s"><mpath href="#ef-wire-bh"/></animateMotion></circle>
+                </g>
+                <!-- Grid particles -->
+                <g id="ef-cur-gh" filter="url(#ef-glow-r)">
+                  <circle r="5" fill="#fca5a5"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0s"><mpath href="#ef-wire-gh"/></animateMotion></circle>
+                  <circle r="4" fill="#f87171"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0.3s"><mpath href="#ef-wire-gh"/></animateMotion></circle>
+                  <circle r="3" fill="#ef4444"><animateMotion dur="0.9s" repeatCount="indefinite" begin="0.6s"><mpath href="#ef-wire-gh"/></animateMotion></circle>
+                </g>
+                <!-- Solar node -->
+                <circle cx="170" cy="46" r="34" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
+                <circle cx="170" cy="46" r="25" fill="#fef3c7"/>
+                <circle cx="170" cy="46" r="10" fill="#f59e0b"/>
+                <line x1="170" y1="27" x2="170" y2="23" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>
+                <line x1="170" y1="65" x2="170" y2="69" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>
+                <line x1="151" y1="46" x2="147" y2="46" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>
+                <line x1="189" y1="46" x2="193" y2="46" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>
+                <line x1="157" y1="33" x2="154" y2="30" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="183" y1="59" x2="186" y2="62" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="183" y1="33" x2="186" y2="30" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="157" y1="59" x2="154" y2="62" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <text id="flow-pv-val" x="170" y="92" text-anchor="middle" font-family="var(--mono)" font-size="13" font-weight="600" fill="#92400e">—</text>
+                <text x="170" y="104" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="#b45309">Solar</text>
+                <!-- Home node -->
+                <circle cx="170" cy="192" r="38" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+                <circle cx="170" cy="192" r="28" fill="#dbeafe"/>
+                <polygon points="170,172 153,190 187,190" fill="#3b82f6"/>
+                <rect x="160" y="190" width="20" height="14" rx="2" fill="#2563eb"/>
+                <rect x="165" y="195" width="8" height="9" rx="1" fill="#bfdbfe"/>
+                <text id="flow-load-val" x="170" y="240" text-anchor="middle" font-family="var(--mono)" font-size="13" font-weight="600" fill="#1e3a5f">—</text>
+                <text x="170" y="252" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="#3b82f6">Home</text>
+                <!-- Battery node -->
+                <circle cx="44" cy="168" r="32" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+                <circle cx="44" cy="168" r="23" fill="#d1fae5"/>
+                <rect x="30" y="161" width="22" height="14" rx="2" fill="#10b981"/>
+                <rect x="51" y="165" width="3" height="6" rx="1" fill="#10b981"/>
+                <rect x="32" y="163" width="6" height="10" rx="1" fill="#d1fae5"/>
+                <text id="flow-batt-val" x="44" y="210" text-anchor="middle" font-family="var(--mono)" font-size="12" font-weight="600" fill="#064e3b">—</text>
+                <text id="flow-batt-dir" x="44" y="222" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#10b981">—</text>
+                <!-- Grid node -->
+                <circle cx="296" cy="168" r="32" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+                <circle cx="296" cy="168" r="23" fill="#fee2e2"/>
+                <line x1="290" y1="157" x2="290" y2="167" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="302" y1="157" x2="302" y2="167" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M285,167 Q285,177 296,177 Q307,177 307,167" stroke="#ef4444" stroke-width="2" fill="none"/>
+                <line x1="296" y1="177" x2="296" y2="183" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+                <text id="flow-grid-val" x="296" y="210" text-anchor="middle" font-family="var(--mono)" font-size="12" font-weight="600" fill="#7f1d1d">—</text>
+                <text id="flow-grid-dir" x="296" y="222" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#ef4444">—</text>
+              </svg>
             </div>
           </div>
 
@@ -4086,12 +4135,16 @@ async function loadBattery() {
       if (dir) dir.textContent = val !== null ? (val > 0.05 ? pos : val < -0.05 ? neg : 'kW (idle)') : 'kW';
     }
 
-    setFlow('flow-grid-val', gridkW, 'flow-grid-dir', 'kW ↓ import', 'kW ↑ export');
-    setFlow('flow-batt-val', battkW, 'flow-batt-dir', 'kW ↑ charging', 'kW ↓ discharging');
+    // Legacy flow (kept for compatibility)
+    setFlow('flow-grid-val', gridkW, 'flow-grid-dir', 'kW import', 'kW export');
+    setFlow('flow-batt-val', battkW, 'flow-batt-dir', 'kW charging', 'kW discharging');
     var pvEl   = document.getElementById('flow-pv-val');
     var loadEl = document.getElementById('flow-load-val');
     if (pvEl)   { pvEl.textContent   = pvkW   !== null ? pvkW.toFixed(2)   : '—'; }
     if (loadEl) { loadEl.textContent = loadkW !== null ? loadkW.toFixed(2) : '—'; }
+
+    // ── Animated flow diagram ─────────────────────────────────────────────
+    updateFlowDiagram(pvkW, battkW, gridkW, loadkW, soc);
 
     // ── Mode tiles — highlight active mode ───────────────────────────────
     // If auto rules are on, always show Auto as the active tile
@@ -4138,6 +4191,73 @@ async function loadBattery() {
     setDot('battery-dot', 'err');
     setTxt('battery-status', 'Error');
   }
+}
+
+// ── Animated energy flow diagram ─────────────────────────────────────────────
+function updateFlowDiagram(pvkW, battkW, gridkW, loadkW, soc) {
+  function efT(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
+  function efA(id,a,v){ var e=document.getElementById(id); if(e) e.setAttribute(a,v); }
+  function efCl(id,c){ var e=document.getElementById(id); if(e) e.className=c; }
+
+  var thresh = 0.05;
+
+  // Solar → Home wire
+  var solarOn = pvkW !== null && pvkW > thresh;
+  efCl('ef-wire-sh', solarOn ? 'ef-fl' : 'ef-idle');
+  efA('ef-cur-sh','opacity', solarOn ? 1 : 0);
+  efT('flow-pv-val', pvkW !== null ? pvkW.toFixed(2) : '—');
+
+  // Battery ↔ Home wire
+  var battCharging    = battkW !== null && battkW > thresh;
+  var battDischarging = battkW !== null && battkW < -thresh;
+  if (battDischarging) {
+    // Battery → Home
+    efA('ef-wire-bh','d','M76,160 L134,178');
+    efCl('ef-wire-bh','ef-fl');
+    efA('ef-cur-bh','opacity',1);
+  } else if (battCharging) {
+    // Home → Battery
+    efA('ef-wire-bh','d','M134,178 L76,160');
+    efCl('ef-wire-bh','ef-fl');
+    efA('ef-cur-bh','opacity',1);
+  } else {
+    efCl('ef-wire-bh','ef-idle');
+    efA('ef-cur-bh','opacity',0);
+  }
+  var battKwAbs = battkW !== null ? Math.abs(battkW).toFixed(2) : '—';
+  efT('flow-batt-val', battKwAbs + (battkW !== null ? ' kW' : ''));
+  var battStatus = battkW === null ? '—' : battkW > thresh ? 'Charging' : battkW < -thresh ? 'Discharging' : 'Idle';
+  var battColor  = battkW !== null && battkW > thresh ? '#10b981' : battkW !== null && battkW < -thresh ? '#f59e0b' : '#9ca3af';
+  efT('flow-batt-dir', (soc !== null ? soc.toFixed(0)+'% · ' : '') + battStatus);
+  efA('flow-batt-dir','fill', battColor);
+
+  // Grid ↔ Home wire
+  var gridImporting = gridkW !== null && gridkW > thresh;
+  var gridExporting = gridkW !== null && gridkW < -thresh;
+  if (gridImporting) {
+    efA('ef-wire-gh','d','M264,160 L206,178');
+    efA('ef-wire-gh','stroke','#dc2626');
+    efCl('ef-wire-gh','ef-fl');
+    efA('ef-cur-gh','opacity',1);
+    efA('ef-cur-gh','filter','url(#ef-glow-r)');
+    efT('flow-grid-dir','Importing');
+    efA('flow-grid-dir','fill','#ef4444');
+  } else if (gridExporting) {
+    efA('ef-wire-gh','d','M206,178 L264,160');
+    efA('ef-wire-gh','stroke','#10b981');
+    efCl('ef-wire-gh','ef-fl');
+    efA('ef-cur-gh','opacity',1);
+    efA('ef-cur-gh','filter','url(#ef-glow-g)');
+    efT('flow-grid-dir','Exporting');
+    efA('flow-grid-dir','fill','#10b981');
+  } else {
+    efCl('ef-wire-gh','ef-idle');
+    efA('ef-cur-gh','opacity',0);
+    efT('flow-grid-dir','Idle');
+    efA('flow-grid-dir','fill','#9ca3af');
+  }
+  efT('flow-grid-val', gridkW !== null ? Math.abs(gridkW).toFixed(2)+' kW' : '—');
+  efT('flow-load-val', loadkW !== null ? loadkW.toFixed(2) : '—');
 }
 
 // ── Battery price forecast chart ─────────────────────────────────────────────
