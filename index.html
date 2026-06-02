@@ -4486,11 +4486,12 @@ function updateRuleToggleUI() {
 
 function startAutoRuleTimer() {
   stopAutoRuleTimer();
-  autoRuleTimer = setInterval(checkAutoRule, 5 * 60 * 1000); // every 5 min
+  autoRuleTimer = setInterval(checkAutoRule, 5 * 60 * 1000); // price check every 5 min
 }
 
 function stopAutoRuleTimer() {
   if (autoRuleTimer) { clearInterval(autoRuleTimer); autoRuleTimer = null; }
+  clearTimeout(window._autoBackendTimer);
 }
 
 // ── Automation log (reads batt_auto_log from Supabase, set by battery-auto.js) ──
@@ -4591,6 +4592,14 @@ async function checkAutoRule() {
     var lcEl = document.getElementById('rule-last-check');
     if (lcEl) lcEl.textContent = 'Pricing checked at ' + ts;
 
+    // Fire backend 30 seconds after pricing is checked (auto mode only)
+    if (autoRuleEnabled) {
+      clearTimeout(window._autoBackendTimer);
+      window._autoBackendTimer = setTimeout(function() {
+        fetch('/.netlify/functions/battery-auto', { method: 'POST' }).catch(function(){});
+      }, 30000);
+    }
+
     // Only show action status + alerts when auto rules is on
     if (!autoRuleEnabled) {
       setRuleStatus('—', 'var(--text3)');
@@ -4635,14 +4644,6 @@ async function checkAutoRule() {
       if (sellEl)  sellEl.style.display  = 'none';
     }
 
-    // Trigger backend immediately after pricing check (30s cooldown to avoid double-firing)
-    if (autoRuleEnabled) {
-      var now2 = Date.now();
-      if (!window._lastAutoTrigger || now2 - window._lastAutoTrigger > 30000) {
-        window._lastAutoTrigger = now2;
-        fetch('/.netlify/functions/battery-auto', { method: 'POST' }).catch(function(){});
-      }
-    }
 
   } catch(e) {
     setRuleStatus('Error: ' + e.message, 'var(--red)');
