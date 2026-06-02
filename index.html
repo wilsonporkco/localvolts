@@ -3782,6 +3782,7 @@ function renderSigenSystemRows() {
       + '<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;" onclick="sigenSetActive(\''+sys.systemId+'\')">'
           + (sigenActiveSystemId===sys.systemId ? '✓ Active' : 'Set active')
         + '</button>'
+      + '<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red);border-color:var(--red);" onclick="sigenRemoveSystem('+i+')" title="Remove system">✕</button>'
       + '</div>';
   }).join('');
   rebuildBatterySelect();
@@ -3800,6 +3801,20 @@ function sigenSetActive(systemId) {
   try { localStorage.setItem('sigen_active_system', systemId); } catch(e){}
   var sel = document.getElementById('battery-system-select');
   if (sel) sel.value = systemId;
+  renderSigenSystemRows();
+}
+
+function sigenRemoveSystem(idx) {
+  var sys = sigenSystems[idx];
+  if (!sys) return;
+  if (!confirm('Remove ' + (sys.systemName || sys.systemId) + ' from this list?')) return;
+  sigenSystems.splice(idx, 1);
+  if (sigenActiveSystemId === sys.systemId && sigenSystems.length) {
+    sigenActiveSystemId = sigenSystems[0].systemId;
+    try { localStorage.setItem('sigen_active_system', sigenActiveSystemId); } catch(e){}
+  }
+  try { localStorage.setItem('sigen_systems', JSON.stringify(sigenSystems)); } catch(e){}
+  sbSettingsSave('sigen_systems', sigenSystems);
   renderSigenSystemRows();
 }
 
@@ -4188,7 +4203,7 @@ function _activateAutoMode() {
   if (!autoRuleEnabled) {
     autoRuleEnabled = true;
     var _sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
-    sbSettingsSave('batt_rules', { enabled: true, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
+    sbSettingsSave('batt_rules', { enabled: true, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
     try { localStorage.setItem('batt_rule_enabled','true'); } catch(e){}
     updateRuleToggleUI();
     startAutoRuleTimer();
@@ -4212,7 +4227,7 @@ async function _setBatteryMode(mode) {
   if (autoRuleEnabled) {
     autoRuleEnabled = false;
     var _sys2 = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
-    sbSettingsSave('batt_rules', { enabled: false, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, systemId: _sys2.systemId||'', nmi: _sys2.nmi||'' });
+    sbSettingsSave('batt_rules', { enabled: false, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys2.systemId||'', nmi: _sys2.nmi||'' });
     try { localStorage.setItem('batt_rule_enabled','false'); } catch(e){}
     updateRuleToggleUI();
     stopAutoRuleTimer();
