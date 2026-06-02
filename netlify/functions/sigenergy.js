@@ -16,7 +16,7 @@
 
 const crypto    = require('crypto');
 const BASE      = process.env.SIGEN_BASE_URL          || 'https://api-aus.sigencloud.com';
-const CBASE     = process.env.SIGEN_CONSUMER_BASE_URL || 'https://api-apac.sigencloud.com';
+const CBASE     = process.env.SIGEN_CONSUMER_BASE_URL || 'https://api-aus.sigencloud.com';
 const MQTT_HOST = process.env.SIGEN_MQTT_HOST         || 'mqtt-aus.sigencloud.com';
 const MQTT_PORT = parseInt(process.env.SIGEN_MQTT_PORT || '1883', 10);
 
@@ -35,6 +35,7 @@ let _consumerExpiry = 0;
 async function getConsumerToken(username, password) {
   if (_consumerToken && Date.now() < _consumerExpiry - 300_000) return _consumerToken;
   const encPwd = encryptSigenPassword(password);
+  console.log('[sigenergy] consumer auth URL:', `${CBASE}/auth/oauth/token`, 'user:', username);
   const res = await fetch(`${CBASE}/auth/oauth/token`, {
     method:  'POST',
     headers: {
