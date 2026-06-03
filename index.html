@@ -2675,6 +2675,7 @@ async function loadDaily() {
       var t=intLabel(r.interval_end);
       return t>=fromTime && t<=toTime;
     });
+    console.log('Filtered rows:', filtered.length, 'fromTime:', fromTime, 'toTime:', toTime, 'sample interval_end:', deduped[0]&&deduped[0].interval_end);
 
     csvData.daily=filtered;
     var tImp=0,tExp=0,tCost=0,tEarn=0;
