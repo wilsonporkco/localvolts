@@ -222,29 +222,22 @@ exports.handler = async (event) => {
       return { statusCode: 200 };
     }
 
-    const threshold     = parseFloat(rules.threshold     ?? 5);    // c/kWh buy threshold
-    const minSoc        = parseFloat(rules.minSoc        ?? 15);   // % discharge floor
-    const maxSoc        = parseFloat(rules.maxSoc        ?? 90);   // % stop charging
-    const sellThreshold = parseFloat(rules.sellThreshold ?? 20);   // c/kWh sell threshold
-    const sellMinSoc    = parseFloat(rules.sellMinSoc    ?? 20);   // % min SOC before selling
-    const sellStopSoc   = parseFloat(rules.sellStopSoc   ?? 20);   // % stop selling below this
+    const threshold     = parseFloat(rules.threshold     ?? 5);
+    const minSoc        = parseFloat(rules.minSoc        ?? 15);
+    const maxSoc        = parseFloat(rules.maxSoc        ?? 90);
+    const sellThreshold = parseFloat(rules.sellThreshold ?? 20);
+    const sellMinSoc    = parseFloat(rules.sellMinSoc    ?? 20);
+    const sellStopSoc   = parseFloat(rules.sellStopSoc   ?? 20);
     const chargeKw      = rules.chargeKw != null ? parseFloat(rules.chargeKw) : null;
     const sellKw        = rules.sellKw   != null ? parseFloat(rules.sellKw)   : null;
+    const sellEnabled   = rules.sellEnabled !== false;  // default true; set false to disable sell rule
 
-    // 2 ── Identify system + NMI
-    // batt_rules may contain systemId and nmi saved from the UI
+    // 2 ── Identify NMI (systemId no longer required — consumer API handles control)
     const systemId = rules.systemId || null;
     const nmi      = rules.nmi      || null;
 
-    if (!systemId) {
-      logEntry.reason = 'No systemId in batt_rules — save settings from Battery panel first';
-      logEntry.error  = 'missing_system_id';
-      await sbSet('batt_auto_log', logEntry);
-      return { statusCode: 200 };
-    }
-
     if (!nmi) {
-      logEntry.reason = 'No NMI mapped to this system — set it in Battery → Settings';
+      logEntry.reason = 'No NMI mapped — set it in Battery → Settings';
       logEntry.error  = 'missing_nmi';
       await sbSet('batt_auto_log', logEntry);
       return { statusCode: 200 };
@@ -310,7 +303,7 @@ exports.handler = async (event) => {
     const wasSelling  = prevLog.action === 'feed_in';
 
     // 5 ── Decide and act — always set mode regardless of previous state
-    if (canSell && !sellFloor) {
+    if (sellEnabled && canSell && !sellFloor) {
       // ── FEED-IN / SELL ────────────────────────────────────────────────────
       logEntry.action = 'feed_in';
       logEntry.reason = `Export ${exportPrice.toFixed(2)} c/kWh ≥ sell threshold ${sellThreshold} c/kWh, SOC ${soc.toFixed(1)}% > floor ${sellMinSoc}%`;
