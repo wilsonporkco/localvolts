@@ -935,14 +935,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               <div class="chart-title" style="margin-bottom:14px;">Operating Mode</div>
 
               <!-- Mode tiles -->
-              <div class="batt-mode-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;" id="battery-mode-btns">
+              <div class="batt-mode-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:12px;" id="battery-mode-btns">
 
                 <!-- Auto tile -->
                 <div id="mode-tile-auto" onclick="activateAutoMode()"
                      style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
                   <div class="mode-icon" style="font-size:20px;margin-bottom:5px;">🤖</div>
                   <div class="mode-label" style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Auto</div>
-                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Price rules<br>control battery</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Auto rules</div>
                 </div>
 
                 <!-- Self-Use tile -->
@@ -950,7 +950,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                      style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
                   <div class="mode-icon" style="font-size:20px;margin-bottom:5px;">☀️</div>
                   <div class="mode-label" style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Self-Use</div>
-                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Solar → battery<br>then home</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Self-use</div>
                 </div>
 
                 <!-- Feed-in tile -->
@@ -958,7 +958,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                      style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
                   <div class="mode-icon" style="font-size:20px;margin-bottom:5px;">⬆️</div>
                   <div class="mode-label" style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Feed-in</div>
-                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Export all solar<br>to grid</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Full feed-in</div>
                 </div>
 
                 <!-- Sigen AI tile -->
@@ -966,7 +966,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                      style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
                   <div class="mode-icon" style="font-size:20px;margin-bottom:5px;">🧠</div>
                   <div class="mode-label" style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Sigen AI</div>
-                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Smart auto<br>optimise</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">AI optimise</div>
                 </div>
 
                 <!-- TOU tile -->
@@ -974,7 +974,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                      style="border:2px solid #e5e7eb;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all 0.15s;user-select:none;">
                   <div class="mode-icon" style="font-size:20px;margin-bottom:5px;">🕐</div>
                   <div class="mode-label" style="font-size:11px;font-weight:700;letter-spacing:0.03em;">Time of Use</div>
-                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">Rules set<br>in Sigen app</div>
+                  <div style="font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:3px;line-height:1.3;">TOU schedule</div>
                 </div>
 
               </div>
@@ -4295,30 +4295,34 @@ async function loadBattPriceChart() {
   var canvas = document.getElementById('batt-price-chart');
   if (!canvas) return;
   try {
-    // Reuse AEMO forecast data if available, else fetch
+    // Use LocalVolts data (same source as auto-rule price check)
     var acc = lvAccounts[lvActiveIdx] || lvAccounts[0] || {};
     var nmi = '';
     try { var _br = await sbSettingsLoad('batt_rules'); if (_br && _br.nmi) nmi = _br.nmi; } catch(e){}
     if (!nmi && knownNMIs.length) nmi = knownNMIs[0];
     if (!nmi) return;
 
-    var p = { NMI: nmi, from: new Date().toISOString().slice(0,10) };
+    var p = { NMI: nmi };
     if (acc.apikey)  p._apikey  = acc.apikey;
     if (acc.partner) p._partner = acc.partner;
     var res  = await fetch(PROXY + '?' + new URLSearchParams(p).toString());
     var data = await res.json();
-    if (!Array.isArray(data)) return;
+    if (!Array.isArray(data) || !data.length) return;
 
-    var now     = Date.now();
-    var future  = data.filter(function(r) {
-      return new Date(r.intervalDatetime).getTime() >= now - 300000;
-    }).slice(0, 144); // 12 hours @ 5-min
+    // Show last 6h + next 6h window
+    var now  = Date.now();
+    var win  = data.filter(function(r) {
+      var t = new Date(r.intervalDatetime).getTime();
+      return t >= now - 6*3600000 && t <= now + 6*3600000;
+    });
+    if (!win.length) win = data.slice(-72); // fallback: last 72 intervals
 
-    var labels = future.map(function(r) {
+    var labels = win.map(function(r) {
       return new Date(r.intervalDatetime).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
     });
-    var costs  = future.map(function(r) { return parseFloat(r.costsAllVarRate) || null; });
-    var earn   = future.map(function(r) { return parseFloat(r.earningsAllVarRate) || null; });
+    // Use null-safe parse — don't use || which filters out legitimate 0 values
+    var costs  = win.map(function(r) { var v = parseFloat(r.costsAllVarRate);   return isNaN(v) ? null : v; });
+    var earn   = win.map(function(r) { var v = parseFloat(r.earningsAllVarRate); return isNaN(v) ? null : v; });
 
     if (_battPriceChart) _battPriceChart.destroy();
     _battPriceChart = new Chart(canvas, {
