@@ -2386,8 +2386,8 @@ async function loadLive() {
     });
 
     mkChart('liveRateChart','liveRate','line',lb,[
-      {label:'Import cost rate',data:sl.map(function(r){var v=safeNum(r.costsAllVarRate); return v;}),yAxisID:'y',borderColor:'#fc8181',backgroundColor:'rgba(252,129,129,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
-      {label:'Export earn rate',data:sl.map(function(r){var v=safeNum(r.earningsAllVarRate); if(v===null) v=safeNum(r.earningsFlexUp); return v;}),yAxisID:'y1',borderColor:'#b794f4',backgroundColor:'rgba(183,148,244,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3],spanGaps:true}
+      {label:'Import cost rate',data:sl.map(function(r){var v=safeNum(r.costsAllVarRate); if(v===null){var c=toCents(r.costsAll,r.costsAllUnits),e=toKwh(r.importsAll,r.importsAllUnits);if(e>0)v=c/e;} return v;}),yAxisID:'y',borderColor:'#fc8181',backgroundColor:'rgba(252,129,129,0.06)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
+      {label:'Export earn rate',data:sl.map(function(r){var v=safeNum(r.earningsAllVarRate); if(v===null) v=safeNum(r.earningsFlexUp); if(v===null){var c=toCents(r.earningsAll,r.earningsAllUnits),e=toKwh(r.exportsAll,r.exportsAllUnits);if(e>0)v=c/e;} return v;}),yAxisID:'y1',borderColor:'#b794f4',backgroundColor:'rgba(183,148,244,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3],spanGaps:true}
     ],{
       yCb:function(v){return v!==null?v.toFixed(1)+'c':'';},
       ySuggestedMin:0, ySuggestedMax:0,
