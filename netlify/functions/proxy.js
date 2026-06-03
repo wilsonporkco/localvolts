@@ -1,12 +1,21 @@
 const https = require("https");
 
-const API_KEY = process.env.LV_API_KEY || "e3c7ea100a1e29e297bfe71b8aa6c2da";
-const PARTNER = process.env.LV_PARTNER  || "140046";
+const API_KEY_DEFAULT = process.env.LV_API_KEY || "e3c7ea100a1e29e297bfe71b8aa6c2da";
+const PARTNER_DEFAULT = process.env.LV_PARTNER  || "140046";
 const LV_BASE = "api.localvolts.com";
 
 exports.handler = async (event) => {
   const params = event.queryStringParameters || {};
-  const qs = Object.keys(params).length ? "?" + new URLSearchParams(params).toString() : "";
+
+  // Allow the frontend to pass per-account credentials via _apikey / _partner.
+  // Strip these internal params before forwarding to the upstream API.
+  const API_KEY = params._apikey || API_KEY_DEFAULT;
+  const PARTNER = params._partner || PARTNER_DEFAULT;
+  const forwardParams = Object.assign({}, params);
+  delete forwardParams._apikey;
+  delete forwardParams._partner;
+
+  const qs = Object.keys(forwardParams).length ? "?" + new URLSearchParams(forwardParams).toString() : "";
   const url = `https://${LV_BASE}/v1/customer/interval${qs}`;
   console.log("Fetching:", url);
   return new Promise((resolve) => {
