@@ -935,7 +935,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               <div class="chart-title" style="margin-bottom:14px;">Operating Mode</div>
 
               <!-- Mode tiles -->
-              <div class="batt-mode-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:12px;" id="battery-mode-btns">
+              <div class="batt-mode-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;" id="battery-mode-btns">
 
                 <!-- Auto tile -->
                 <div id="mode-tile-auto" onclick="activateAutoMode()"
@@ -4312,13 +4312,13 @@ async function loadBattPriceChart() {
     // Show last 6h + next 6h window
     var now  = Date.now();
     var win  = data.filter(function(r) {
-      var t = new Date(r.intervalDatetime).getTime();
+      var t = new Date((r.intervalDatetime||'').replace(' ','T')).getTime();
       return t >= now - 6*3600000 && t <= now + 6*3600000;
     });
     if (!win.length) win = data.slice(-72); // fallback: last 72 intervals
 
     var labels = win.map(function(r) {
-      return new Date(r.intervalDatetime).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+      return new Date((r.intervalDatetime||'').replace(' ','T')).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
     });
     // Use null-safe parse — don't use || which filters out legitimate 0 values
     var costs  = win.map(function(r) { var v = parseFloat(r.costsAllVarRate);   return isNaN(v) ? null : v; });
