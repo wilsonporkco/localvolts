@@ -1993,9 +1993,13 @@ function switchPanel(name, el) {
       renderSettingsNMIs();
     });
   }
+  if (name==='live')       { loadLive(); }
+  if (name==='daily')      { if (hasSB()) loadDaily(); }
+  if (name==='weekly')     { }
+  if (name==='monthly')    { }
   if (name==='comparison') { loadComparison(); }
-  if (name==='battery') { loadRuleSettings(); loadBattery(); loadAutoLog(); }
-  if (name==='settings') { renderSigenSettings(); }
+  if (name==='battery')    { loadRuleSettings(); loadBattery(); loadAutoLog(); }
+  if (name==='settings')   { renderSigenSettings(); }
 }
 
 function hideAllErrors() {
@@ -2675,7 +2679,6 @@ async function loadDaily() {
       var t=intLabel(r.interval_end);
       return t>=fromTime && t<=toTime;
     });
-    console.log('Filtered rows:', filtered.length, 'fromTime:', fromTime, 'toTime:', toTime, 'sample interval_end:', deduped[0]&&deduped[0].interval_end);
 
     csvData.daily=filtered;
     var tImp=0,tExp=0,tCost=0,tEarn=0;
@@ -2736,7 +2739,6 @@ async function loadDaily() {
 
     document.getElementById('daily-loading').style.display='none';
     document.getElementById('daily-content').style.display='block';
-    console.log('daily-content set to block, actual display:', document.getElementById('daily-content').style.display);
     // table stays collapsed — user taps to expand
     // Show live badge if today's date is selected
     var todayStr = new Date().toLocaleDateString('en-CA');
