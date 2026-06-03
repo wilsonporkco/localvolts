@@ -556,28 +556,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   .chart-card { padding: 10px 12px; margin-bottom: 8px; }
   .detail-card { padding: 8px 10px; }
 
-  /* Battery panel inline grids */
-  #battery-metrics { grid-template-columns: repeat(2,1fr) !important; }
+  /* Battery panel — keep 2-col summary on phones */
   .batt-summary-bar { grid-template-columns: repeat(2,1fr) !important; }
-  .batt-mode-grid { grid-template-columns: repeat(3,1fr) !important; gap:6px !important; }
-  .batt-mode-grid > div { padding:8px 4px !important; }
-  .batt-mode-grid .mode-icon { font-size:16px !important; }
-  .batt-mode-grid .mode-label { font-size:10px !important; }
-  .batt-rule-grid { grid-template-columns: 1fr 1fr !important; }
-  .ef-svg-wrap { max-height: 220px; }
-
-  /* Stop iOS from zooming on input focus */
-  input, select, textarea { font-size: 16px !important; }
-  .batt-chart-wrap { height: 130px !important; }
-  .ef-svg-wrap { max-height: 200px; }
-
-  /* Auto rule settings: stack to 2-col */
-  .rule-settings-grid { grid-template-columns: 1fr 1fr !important; }
-}
-
-@media (max-width: 400px) {
-  .batt-summary-bar { grid-template-columns: repeat(2,1fr) !important; }
-  .batt-mode-grid { grid-template-columns: repeat(2,1fr) !important; }
+  /* Stop iOS zooming on input focus */
+  input[type="number"], input[type="text"], select { font-size: 16px !important; }
 }
 </style>
 </head>
@@ -4312,13 +4294,13 @@ async function loadBattPriceChart() {
     // Show last 6h + next 6h window
     var now  = Date.now();
     var win  = data.filter(function(r) {
-      var t = new Date((r.intervalDatetime||'').replace(' ','T')).getTime();
+      var t = new Date(r.intervalEnd||r.intervalDatetime||'').getTime();
       return t >= now - 6*3600000 && t <= now + 6*3600000;
     });
     if (!win.length) win = data.slice(-72); // fallback: last 72 intervals
 
     var labels = win.map(function(r) {
-      return new Date((r.intervalDatetime||'').replace(' ','T')).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+      return new Date(r.intervalEnd||r.intervalDatetime||'').toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
     });
     // Use null-safe parse — don't use || which filters out legitimate 0 values
     var costs  = win.map(function(r) { var v = parseFloat(r.costsAllVarRate);   return isNaN(v) ? null : v; });
