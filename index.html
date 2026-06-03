@@ -2736,6 +2736,7 @@ async function loadDaily() {
 
     document.getElementById('daily-loading').style.display='none';
     document.getElementById('daily-content').style.display='block';
+    console.log('daily-content set to block, actual display:', document.getElementById('daily-content').style.display);
     // table stays collapsed — user taps to expand
     // Show live badge if today's date is selected
     var todayStr = new Date().toLocaleDateString('en-CA');
