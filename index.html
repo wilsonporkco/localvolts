@@ -835,24 +835,23 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 
           <div class="metrics-row" id="battery-metrics" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;"></div>
 
-          <!-- SOC + Energy flow combined compact card -->
-          <div class="chart-card" style="margin-bottom:14px;padding:14px 16px;">
+          <!-- SOC + Energy flow side by side -->
+          <div class="two-charts" style="margin-bottom:14px;">
 
-            <!-- SOC compact strip -->
-            <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #f0f2f4;">
-              <div style="display:flex;align-items:baseline;gap:4px;min-width:64px;">
-                <div id="soc-pct" style="font-size:36px;font-weight:700;letter-spacing:-0.03em;color:var(--text);line-height:1;">—</div>
-                <div style="font-family:var(--mono);font-size:11px;color:var(--text3);">%</div>
+            <!-- SOC compact card -->
+            <div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;padding:16px;">
+              <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">Battery Level</div>
+              <div style="display:flex;align-items:baseline;gap:5px;margin-bottom:12px;">
+                <div id="soc-pct" style="font-size:48px;font-weight:700;letter-spacing:-0.04em;color:var(--text);line-height:1;">—</div>
+                <div style="font-family:var(--mono);font-size:13px;color:var(--text3);">%</div>
               </div>
-              <div style="flex:1;">
-                <div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text3);text-transform:uppercase;margin-bottom:5px;">Battery Level</div>
-                <svg id="soc-bar-svg" viewBox="0 0 280 18" style="width:100%;height:18px;display:block;"></svg>
-                <div id="soc-status-label" style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:4px;">—</div>
-              </div>
+              <svg id="soc-bar-svg" viewBox="0 0 280 18" style="width:100%;height:18px;display:block;margin-bottom:8px;"></svg>
+              <div id="soc-status-label" style="font-family:var(--mono);font-size:11px;color:var(--text3);">—</div>
             </div>
 
-            <!-- Energy flow horizontal SVG -->
-            <svg id="ef-svg" viewBox="0 0 480 155" class="ef-svg-wrap" style="width:100%;max-height:155px;">
+            <!-- Energy flow card -->
+            <div class="chart-card" style="padding:12px 10px;">
+              <svg id="ef-svg" viewBox="0 0 300 180" class="ef-svg-wrap" style="width:100%;max-height:180px;">
                 <defs>
                   <filter id="ef-glow-y"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
                   <filter id="ef-glow-g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -865,12 +864,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                   </style>
                 </defs>
 
-                <!-- Horizontal layout: Battery(80,90) — Home(240,90) — Grid(400,90) with Solar(240,25) above -->
+                <!-- Layout fits 300x180: Solar(150,28) Home(150,100) Battery(40,100) Grid(260,100) -->
 
                 <!-- Wires -->
-                <path id="ef-wire-sh" d="M240,49 L240,66" stroke="#d97706" stroke-width="2.5" fill="none" stroke-linecap="round" class="ef-fl"/>
-                <path id="ef-wire-bh" d="M104,90 L216,90" stroke="#059669" stroke-width="2.5" fill="none" stroke-linecap="round" class="ef-idle"/>
-                <path id="ef-wire-gh" d="M376,90 L264,90" stroke="#dc2626" stroke-width="2.5" fill="none" stroke-linecap="round" class="ef-fl"/>
+                <path id="ef-wire-sh" d="M150,44 L150,78" stroke="#d97706" stroke-width="2.5" fill="none" stroke-linecap="round" class="ef-fl"/>
+                <path id="ef-wire-bh" d="M62,100 L128,100" stroke="#059669" stroke-width="2.5" fill="none" stroke-linecap="round" class="ef-idle"/>
+                <path id="ef-wire-gh" d="M238,100 L172,100" stroke="#dc2626" stroke-width="2.5" fill="none" stroke-linecap="round" class="ef-fl"/>
 
                 <!-- Particles -->
                 <g id="ef-cur-sh" filter="url(#ef-glow-y)">
@@ -890,43 +889,43 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
                 </g>
 
                 <!-- Solar node (top center) -->
-                <circle cx="240" cy="26" r="22" fill="#fef3c7" stroke="#fcd34d" stroke-width="1.5"/>
-                <circle cx="240" cy="26" r="9" fill="#f59e0b"/>
-                <line x1="240" y1="12" x2="240" y2="9" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
-                <line x1="240" y1="39" x2="240" y2="42" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
-                <line x1="227" y1="26" x2="224" y2="26" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
-                <line x1="253" y1="26" x2="256" y2="26" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
-                <line x1="231" y1="17" x2="229" y2="15" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
-                <line x1="249" y1="35" x2="251" y2="37" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
-                <line x1="249" y1="17" x2="251" y2="15" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
-                <line x1="231" y1="35" x2="229" y2="37" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
-                <text id="flow-pv-val" x="240" y="60" text-anchor="middle" font-family="var(--mono)" font-size="12" font-weight="600" fill="#92400e">—</text>
-                <text x="240" y="72" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#b45309">Solar</text>
+                <circle cx="150" cy="28" r="18" fill="#fef3c7" stroke="#fcd34d" stroke-width="1.5"/>
+                <circle cx="150" cy="28" r="8" fill="#f59e0b"/>
+                <line x1="150" y1="14" x2="150" y2="11" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="150" y1="42" x2="150" y2="45" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="136" y1="28" x2="133" y2="28" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="164" y1="28" x2="167" y2="28" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="140" y1="18" x2="138" y2="16" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="160" y1="38" x2="162" y2="40" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="160" y1="18" x2="162" y2="16" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="140" y1="38" x2="138" y2="40" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round"/>
+                <text id="flow-pv-val" x="150" y="9" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="600" fill="#92400e">—</text>
+                <text x="150" y="57" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#b45309">Solar</text>
 
                 <!-- Home node (center) -->
-                <circle cx="240" cy="90" r="24" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
-                <polygon points="240,76 228,90 252,90" fill="#3b82f6"/>
-                <rect x="234" y="90" width="12" height="9" rx="1" fill="#2563eb"/>
-                <rect x="237" y="93" width="5" height="6" rx="1" fill="#bfdbfe"/>
-                <text id="flow-load-val" x="240" y="126" text-anchor="middle" font-family="var(--mono)" font-size="12" font-weight="600" fill="#1e3a5f">—</text>
-                <text x="240" y="138" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3b82f6">Home</text>
+                <circle cx="150" cy="100" r="22" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+                <polygon points="150,86 138,100 162,100" fill="#3b82f6"/>
+                <rect x="144" y="100" width="12" height="9" rx="1" fill="#2563eb"/>
+                <rect x="147" y="103" width="5" height="6" rx="1" fill="#bfdbfe"/>
+                <text id="flow-load-val" x="150" y="134" text-anchor="middle" font-family="var(--mono)" font-size="12" font-weight="600" fill="#1e3a5f">—</text>
+                <text x="150" y="145" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#3b82f6">Home</text>
 
                 <!-- Battery node (left) -->
-                <circle cx="80" cy="90" r="22" fill="#d1fae5" stroke="#6ee7b7" stroke-width="1.5"/>
-                <rect x="68" y="84" width="16" height="11" rx="2" fill="#10b981"/>
-                <rect x="83" y="87" width="3" height="5" rx="1" fill="#10b981"/>
-                <rect x="70" y="86" width="4" height="7" rx="1" fill="#d1fae5"/>
-                <text id="flow-batt-val" x="80" y="123" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="600" fill="#064e3b">—</text>
-                <text id="flow-batt-dir" x="80" y="135" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#10b981">—</text>
+                <circle cx="40" cy="100" r="20" fill="#d1fae5" stroke="#6ee7b7" stroke-width="1.5"/>
+                <rect x="29" y="94" width="14" height="10" rx="2" fill="#10b981"/>
+                <rect x="42" y="97" width="3" height="4" rx="1" fill="#10b981"/>
+                <rect x="31" y="96" width="4" height="6" rx="1" fill="#d1fae5"/>
+                <text id="flow-batt-val" x="40" y="132" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="600" fill="#064e3b">—</text>
+                <text id="flow-batt-dir" x="40" y="143" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#10b981">—</text>
 
                 <!-- Grid node (right) -->
-                <circle cx="400" cy="90" r="22" fill="#fee2e2" stroke="#fca5a5" stroke-width="1.5"/>
-                <line x1="395" y1="80" x2="395" y2="89" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                <line x1="405" y1="80" x2="405" y2="89" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
-                <path d="M391,89 Q391,98 400,98 Q409,98 409,89" stroke="#ef4444" stroke-width="2" fill="none"/>
-                <line x1="400" y1="98" x2="400" y2="104" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
-                <text id="flow-grid-val" x="400" y="123" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="600" fill="#7f1d1d">—</text>
-                <text id="flow-grid-dir" x="400" y="135" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#ef4444">—</text>
+                <circle cx="260" cy="100" r="20" fill="#fee2e2" stroke="#fca5a5" stroke-width="1.5"/>
+                <line x1="255" y1="91" x2="255" y2="99" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="265" y1="91" x2="265" y2="99" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M251,99 Q251,109 260,109 Q269,109 269,99" stroke="#ef4444" stroke-width="2" fill="none"/>
+                <line x1="260" y1="109" x2="260" y2="115" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+                <text id="flow-grid-val" x="260" y="132" text-anchor="middle" font-family="var(--mono)" font-size="11" font-weight="600" fill="#7f1d1d">—</text>
+                <text id="flow-grid-dir" x="260" y="143" text-anchor="middle" font-family="var(--mono)" font-size="9" fill="#ef4444">—</text>
               </svg>
           </div>
 
@@ -4243,11 +4242,11 @@ function updateFlowDiagram(pvkW, battkW, gridkW, loadkW, soc) {
   var battCharging    = battkW !== null && battkW > thresh;
   var battDischarging = battkW !== null && battkW < -thresh;
   if (battDischarging) {
-    efA('ef-wire-bh','d','M104,90 L216,90');
+    efA('ef-wire-bh','d','M62,100 L128,100');
     efCl('ef-wire-bh','ef-fl');
     efA('ef-cur-bh','opacity',1);
   } else if (battCharging) {
-    efA('ef-wire-bh','d','M216,90 L104,90');
+    efA('ef-wire-bh','d','M128,100 L62,100');
     efCl('ef-wire-bh','ef-fl');
     efA('ef-cur-bh','opacity',1);
   } else {
@@ -4265,7 +4264,7 @@ function updateFlowDiagram(pvkW, battkW, gridkW, loadkW, soc) {
   var gridImporting = gridkW !== null && gridkW > thresh;
   var gridExporting = gridkW !== null && gridkW < -thresh;
   if (gridImporting) {
-    efA('ef-wire-gh','d','M376,90 L264,90');
+    efA('ef-wire-gh','d','M238,100 L172,100');
     efA('ef-wire-gh','stroke','#dc2626');
     efCl('ef-wire-gh','ef-fl');
     efA('ef-cur-gh','opacity',1);
@@ -4273,7 +4272,7 @@ function updateFlowDiagram(pvkW, battkW, gridkW, loadkW, soc) {
     efT('flow-grid-dir','Importing');
     efA('flow-grid-dir','fill','#ef4444');
   } else if (gridExporting) {
-    efA('ef-wire-gh','d','M264,90 L376,90');
+    efA('ef-wire-gh','d','M172,100 L238,100');
     efA('ef-wire-gh','stroke','#10b981');
     efCl('ef-wire-gh','ef-fl');
     efA('ef-cur-gh','opacity',1);
