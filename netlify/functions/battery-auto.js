@@ -234,7 +234,21 @@ exports.handler = async (event) => {
 
     // 2 ── Identify NMI (systemId no longer required — consumer API handles control)
     const systemId = rules.systemId || null;
-    const nmi      = rules.nmi      || null;
+    let nmi        = rules.nmi      || null;
+
+    // Fallback: if batt_rules has no NMI (e.g. a client saved with it blank),
+    // use the NMI the battery system is mapped to in sigen_systems (source of truth).
+    if (!nmi) {
+      try {
+        const systems = await sbGet('sigen_systems');
+        if (Array.isArray(systems) && systems.length) {
+          const sys = (systemId && systems.find(s => s.systemId === systemId && s.nmi))
+                   || systems.find(s => s.nmi);
+          if (sys && sys.nmi) nmi = String(sys.nmi);
+        }
+      } catch (e) {}
+    }
+
 
     if (!nmi) {
       logEntry.reason = 'No NMI mapped — set it in Battery → Settings';
