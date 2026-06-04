@@ -1918,7 +1918,7 @@ function switchPanel(name, el) {
     });
   }
   if (name==='comparison') { loadComparison(); }
-  if (name==='battery') { loadRuleSettings(); loadBattery(); loadAutoLog(); }
+  if (name==='battery') { ensureSigenLoaded().then(function(){ loadRuleSettings(); loadBattery(); loadAutoLog(); }); }
   if (name==='settings') { renderSigenSettings(); }
 }
 
@@ -4884,25 +4884,35 @@ function setRuleStatus(msg, color) {
 }
 
 // ── Boot: load Sigenergy settings from Supabase ───────────────────────────────
-(async function() {
-  try {
-    var remoteKey    = await sbSettingsLoad('sigen_appkey');
-    var remoteSec    = await sbSettingsLoad('sigen_appsecret');
-    var remoteRegion = await sbSettingsLoad('sigen_region');
-    var remoteSys    = await sbSettingsLoad('sigen_systems');
-    if (remoteKey    && !sigenAppKey)    { sigenAppKey    = remoteKey;    try{localStorage.setItem('sigen_appkey',    sigenAppKey);}catch(e){} }
-    if (remoteSec    && !sigenAppSecret) { sigenAppSecret = remoteSec;    try{localStorage.setItem('sigen_appsecret', sigenAppSecret);}catch(e){} }
-    if (remoteRegion && !sigenRegion)    { sigenRegion    = remoteRegion; try{localStorage.setItem('sigen_region',    sigenRegion);}catch(e){} }
-    if (remoteSys    && Array.isArray(remoteSys) && !sigenSystems.length) {
-      sigenSystems = remoteSys;
-      try{localStorage.setItem('sigen_systems', JSON.stringify(sigenSystems));}catch(e){}
-    }
-    if (!sigenActiveSystemId && sigenSystems.length) {
-      sigenActiveSystemId = sigenSystems[0].systemId;
-    }
-    rebuildBatterySelect();
-  } catch(e) { /* Supabase not yet configured */ }
-})();
+// Reusable: the battery tab awaits this so a fresh device (e.g. phone with empty
+// localStorage) has its systems + NMI mapping loaded BEFORE the panel initialises.
+var _sigenBootPromise = null;
+function ensureSigenLoaded() {
+  if (!_sigenBootPromise) {
+    _sigenBootPromise = (async function() {
+      try {
+        var remoteKey    = await sbSettingsLoad('sigen_appkey');
+        var remoteSec    = await sbSettingsLoad('sigen_appsecret');
+        var remoteRegion = await sbSettingsLoad('sigen_region');
+        var remoteSys    = await sbSettingsLoad('sigen_systems');
+        if (remoteKey    && !sigenAppKey)    { sigenAppKey    = remoteKey;    try{localStorage.setItem('sigen_appkey',    sigenAppKey);}catch(e){} }
+        if (remoteSec    && !sigenAppSecret) { sigenAppSecret = remoteSec;    try{localStorage.setItem('sigen_appsecret', sigenAppSecret);}catch(e){} }
+        if (remoteRegion && !sigenRegion)    { sigenRegion    = remoteRegion; try{localStorage.setItem('sigen_region',    sigenRegion);}catch(e){} }
+        if (remoteSys    && Array.isArray(remoteSys) && !sigenSystems.length) {
+          sigenSystems = remoteSys;
+          try{localStorage.setItem('sigen_systems', JSON.stringify(sigenSystems));}catch(e){}
+        }
+        if (!sigenActiveSystemId && sigenSystems.length) {
+          sigenActiveSystemId = sigenSystems[0].systemId;
+          try { localStorage.setItem('sigen_active_system', sigenActiveSystemId); } catch(e){}
+        }
+        rebuildBatterySelect();
+      } catch(e) { /* Supabase not yet configured */ }
+    })();
+  }
+  return _sigenBootPromise;
+}
+ensureSigenLoaded();
 
 </script>
 
