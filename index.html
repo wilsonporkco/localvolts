@@ -4605,6 +4605,15 @@ async function loadRuleSettings() {
         var _sysRef = sigenSystems.find(function(s){ return s.systemId === remote.systemId; });
         if (_sysRef) _sysRef.nmi = remote.nmi;
       }
+      // Self-heal: batt_rules has no NMI but this device knows the battery's NMI — repair Supabase
+      if (!remote.nmi) {
+        var _fixNmi = resolveBattNmi();
+        if (_fixNmi) {
+          remote.nmi = _fixNmi;
+          if (!remote.systemId && sigenActiveSystemId) remote.systemId = sigenActiveSystemId;
+          sbSettingsSave('batt_rules', remote);
+        }
+      }
     } else {
       // No Supabase data — use defaults
       autoRuleEnabled   = false;
@@ -4759,6 +4768,7 @@ async function loadAutoLog() {
 async function checkAutoRule() {
   // Always fetch + show the current price (regardless of whether auto rules is on).
   // Only take actions (alert banner, status message) when rules are enabled.
+  try { await ensureSigenLoaded(); } catch(e) {}
 
   // Find NMI mapped to the active battery system
   // Prefer batt_rules.nmi from Supabase (most reliable), fall back to sigenSystems
@@ -4898,10 +4908,26 @@ function ensureSigenLoaded() {
         if (remoteKey    && !sigenAppKey)    { sigenAppKey    = remoteKey;    try{localStorage.setItem('sigen_appkey',    sigenAppKey);}catch(e){} }
         if (remoteSec    && !sigenAppSecret) { sigenAppSecret = remoteSec;    try{localStorage.setItem('sigen_appsecret', sigenAppSecret);}catch(e){} }
         if (remoteRegion && !sigenRegion)    { sigenRegion    = remoteRegion; try{localStorage.setItem('sigen_region',    sigenRegion);}catch(e){} }
-        if (remoteSys    && Array.isArray(remoteSys) && !sigenSystems.length) {
-          sigenSystems = remoteSys;
+        var needPush = false;
+        if (remoteSys && Array.isArray(remoteSys) && remoteSys.length) {
+          if (!sigenSystems.length) {
+            // Fresh device — adopt remote list
+            sigenSystems = remoteSys;
+          } else {
+            // Merge: keep local list, fill in NMI mapping from remote where local lacks it
+            sigenSystems.forEach(function(loc) {
+              var rem = remoteSys.find(function(r){ return r.systemId === loc.systemId; });
+              if (rem && rem.nmi && !loc.nmi) loc.nmi = rem.nmi;
+              if (rem && !rem.nmi && loc.nmi) needPush = true; // local knows more than remote
+            });
+            if (sigenSystems.some(function(loc){ return !remoteSys.find(function(r){ return r.systemId === loc.systemId; }); })) needPush = true;
+          }
           try{localStorage.setItem('sigen_systems', JSON.stringify(sigenSystems));}catch(e){}
+        } else if (sigenSystems.length) {
+          // Remote empty but this device has systems — push them up for other devices
+          needPush = true;
         }
+        if (needPush) sbSettingsSave('sigen_systems', sigenSystems);
         if (!sigenActiveSystemId && sigenSystems.length) {
           sigenActiveSystemId = sigenSystems[0].systemId;
           try { localStorage.setItem('sigen_active_system', sigenActiveSystemId); } catch(e){}
