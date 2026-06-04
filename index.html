@@ -4211,7 +4211,7 @@ async function loadBattPriceChart() {
     var acc = lvAccounts[lvActiveIdx] || lvAccounts[0] || {};
     var nmi = '';
     try { var _br = await sbSettingsLoad('batt_rules'); if (_br && _br.nmi) nmi = _br.nmi; } catch(e){}
-    if (!nmi && knownNMIs.length) nmi = knownNMIs[0];
+    if (!nmi) nmi = resolveBattNmi();
     if (!nmi) return;
 
     var p = { NMI: nmi, from: new Date().toISOString().slice(0,10) };
@@ -4420,7 +4420,7 @@ function _activateAutoMode() {
   if (!autoRuleEnabled) {
     autoRuleEnabled = true;
     var _sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
-    sbSettingsSave('batt_rules', { enabled: true, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
+    sbSettingsSave('batt_rules', { enabled: true, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys.systemId||'', nmi: resolveBattNmi() });
     try { localStorage.setItem('batt_rule_enabled','true'); } catch(e){}
     updateRuleToggleUI();
     startAutoRuleTimer();
@@ -4446,7 +4446,7 @@ async function _setBatteryMode(mode) {
   if (autoRuleEnabled) {
     autoRuleEnabled = false;
     var _sys2 = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
-    sbSettingsSave('batt_rules', { enabled: false, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys2.systemId||'', nmi: _sys2.nmi||'' });
+    sbSettingsSave('batt_rules', { enabled: false, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys2.systemId||'', nmi: resolveBattNmi() });
     try { localStorage.setItem('batt_rule_enabled','false'); } catch(e){}
     updateRuleToggleUI();
     stopAutoRuleTimer();
@@ -4573,6 +4573,17 @@ var autoChargeKw         = null; // kW — null = use inverter max
 var autoSellKw           = null; // kW — null = use inverter max
 var autoRuleTimer        = null;
 var lastCheckedSoc       = null; // updated by loadBattery()
+var battNmiCache         = '';   // last known good NMI for batt_rules — never overwrite with blank
+
+// Resolve the battery's NMI for batt_rules. Always the NMI the battery system is
+// mapped to (Settings → Battery), falling back to the last known batt_rules NMI.
+// Never an arbitrary meter.
+function resolveBattNmi() {
+  var sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
+  var nmi = sys.nmi || battNmiCache || '';
+  if (nmi) battNmiCache = nmi;
+  return nmi;
+}
 
 async function loadRuleSettings() {
   // Load from Supabase first, fall back to localStorage
@@ -4588,6 +4599,7 @@ async function loadRuleSettings() {
       autoSellStopSoc   = parseFloat(remote.sellStopSoc   ?? 20);
       autoChargeKw      = remote.chargeKw != null ? parseFloat(remote.chargeKw) : null;
       autoSellKw        = remote.sellKw   != null ? parseFloat(remote.sellKw)   : null;
+      if (remote.nmi) battNmiCache = String(remote.nmi);
       // Sync NMI from batt_rules back into sigenSystems so System Info panel shows it
       if (remote.systemId && remote.nmi) {
         var _sysRef = sigenSystems.find(function(s){ return s.systemId === remote.systemId; });
@@ -4625,8 +4637,7 @@ async function saveRuleSettings() {
 
   // Include systemId + nmi so the scheduled function (battery-auto.js) knows what to control
   var activeSystemId = sigenActiveSystemId || (sigenSystems.length ? sigenSystems[0].systemId : '');
-  var activeSys      = sigenSystems.find(function(s){ return s.systemId === activeSystemId; }) || {};
-  var activeNmi      = activeSys.nmi || '';
+  var activeNmi      = resolveBattNmi();
 
   var payload = {
     enabled:       autoRuleEnabled,
@@ -4676,7 +4687,7 @@ function _toggleAutoRule() {
   autoRuleEnabled = !autoRuleEnabled;
   // Persist toggle state online (include systemId + nmi so scheduled function has everything it needs)
   var _sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
-  sbSettingsSave('batt_rules', { enabled: autoRuleEnabled, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys.systemId||'', nmi: _sys.nmi||'' });
+  sbSettingsSave('batt_rules', { enabled: autoRuleEnabled, threshold: autoRuleThreshold, minSoc: autoRuleMinSoc, maxSoc: autoRuleMaxSoc, sellThreshold: autoSellThreshold, sellMinSoc: autoSellMinSoc, sellStopSoc: autoSellStopSoc, chargeKw: autoChargeKw, sellKw: autoSellKw, systemId: _sys.systemId||'', nmi: resolveBattNmi() });
   updateRuleToggleUI();
   updateModeTiles(autoRuleEnabled ? 'auto' : null);
   if (autoRuleEnabled) {
@@ -4761,8 +4772,6 @@ async function checkAutoRule() {
     var sys = sigenSystems.find(function(s){ return s.systemId === activeSysId; });
     if (sys) nmi = sys.nmi || '';
   }
-  // Fall back to first known NMI if no NMI mapped yet
-  if (!nmi && knownNMIs.length) nmi = knownNMIs[0];
   if (!nmi) {
     if (autoRuleEnabled) setRuleStatus('No NMI found — map one in Settings → Battery', 'var(--amber)');
     return;
