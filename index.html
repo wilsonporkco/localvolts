@@ -3744,6 +3744,7 @@ try { sigenAppKey    = localStorage.getItem('sigen_appkey')    || ''; } catch(e)
 try { sigenAppSecret = localStorage.getItem('sigen_appsecret') || ''; } catch(e){}
 try { sigenRegion    = localStorage.getItem('sigen_region')    || 'https://api-aus.sigencloud.com'; } catch(e){}
 try { sigenSystems   = JSON.parse(localStorage.getItem('sigen_systems') || '[]'); } catch(e){}
+sigenSystems = (Array.isArray(sigenSystems) ? sigenSystems : []).filter(function(s){ return s && s.systemId; });
 try { sigenActiveSystemId = localStorage.getItem('sigen_active_system') || ''; } catch(e){}
 
 // ── Settings helpers ─────────────────────────────────────────────────────────
@@ -4579,7 +4580,9 @@ var battNmiCache         = '';   // last known good NMI for batt_rules — never
 // mapped to (Settings → Battery), falling back to the last known batt_rules NMI.
 // Never an arbitrary meter.
 function resolveBattNmi() {
-  var sys = sigenSystems.find(function(s){ return s.systemId === sigenActiveSystemId; }) || sigenSystems[0] || {};
+  var sys = sigenSystems.find(function(s){ return s.systemId && s.systemId === sigenActiveSystemId; })
+         || sigenSystems.find(function(s){ return s.systemId && s.nmi; })
+         || {};
   var nmi = sys.nmi || battNmiCache || '';
   if (nmi) battNmiCache = nmi;
   return nmi;
@@ -4909,7 +4912,17 @@ function ensureSigenLoaded() {
         if (remoteSec    && !sigenAppSecret) { sigenAppSecret = remoteSec;    try{localStorage.setItem('sigen_appsecret', sigenAppSecret);}catch(e){} }
         if (remoteRegion && !sigenRegion)    { sigenRegion    = remoteRegion; try{localStorage.setItem('sigen_region',    sigenRegion);}catch(e){} }
         var needPush = false;
-        if (remoteSys && Array.isArray(remoteSys) && remoteSys.length) {
+        // Drop junk entries (blank systemId) — they hijack auto-select and NMI resolution
+        var _rawRemoteLen = Array.isArray(remoteSys) ? remoteSys.length : 0;
+        remoteSys = (Array.isArray(remoteSys) ? remoteSys : []).filter(function(s){ return s && s.systemId; });
+        if (remoteSys.length !== _rawRemoteLen) needPush = true;
+        var _cleanLocal = sigenSystems.filter(function(s){ return s && s.systemId; });
+        if (_cleanLocal.length !== sigenSystems.length) {
+          sigenSystems = _cleanLocal;
+          needPush = true;
+          try{localStorage.setItem('sigen_systems', JSON.stringify(sigenSystems));}catch(e){}
+        }
+        if (remoteSys.length) {
           if (!sigenSystems.length) {
             // Fresh device — adopt remote list
             sigenSystems = remoteSys;
@@ -4929,7 +4942,8 @@ function ensureSigenLoaded() {
         }
         if (needPush) sbSettingsSave('sigen_systems', sigenSystems);
         if (!sigenActiveSystemId && sigenSystems.length) {
-          sigenActiveSystemId = sigenSystems[0].systemId;
+          var _pref = sigenSystems.find(function(s){ return s.nmi; }) || sigenSystems[0];
+          sigenActiveSystemId = _pref.systemId;
           try { localStorage.setItem('sigen_active_system', sigenActiveSystemId); } catch(e){}
         }
         rebuildBatterySelect();
