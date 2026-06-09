@@ -216,15 +216,24 @@ def fetch_and_save(account, from_dt=None, to_dt=None, label=""):
 
 def sync_account(account, now):
     label = account.get("label", account.get("partner", "?"))
-    # Support both 'nmi' (string) and 'nmis' (array from dashboard)
-    # If manual NMIs are set, sync each one individually so we get the right data
+    # Support both 'nmi' (string) and 'nmis' (array from dashboard).
+    # An account may be authorised for MULTIPLE NMIs — sync every one of them,
+    # not just the first. (Previously only nmis[0] was fetched, so any extra
+    # NMIs added to an account never got historical data.)
     nmis_list = account.get("nmis") or []
     if isinstance(nmis_list, list) and nmis_list:
-        nmi = nmis_list[0]  # use first manual NMI; loop below handles multiples
+        nmis = [n for n in nmis_list if n]
     else:
-        nmi = account.get("nmi", "*")
-    account = dict(account, nmi=nmi)  # ensure nmi key is set
+        nmis = [account.get("nmi", "*")]
 
+    total = 0
+    for nmi in nmis:
+        total += _sync_one_nmi(dict(account, nmi=nmi), now, label)
+    return total
+
+
+def _sync_one_nmi(account, now, label):
+    nmi = account.get("nmi", "*")
     total = 0
     print(f"\n  Account: {label} (partner={account.get('partner')}, NMI={nmi})")
 
@@ -274,7 +283,56 @@ def main():
             label = account.get("label", account.get("partner", "?"))
             print(f"  ERROR syncing account {label}: {e}")
 
+    # Sweep any "known" NMIs that aren't explicitly tied to an account.
+    # The dashboard's live view queries every account on demand, so an NMI can
+    # be visible live without ever being synced. This pass mirrors that: for
+    # each known NMI not already covered above, try each account until one is
+    # authorised and returns data — guaranteeing history matches the live view.
+    try:
+        grand_total += sweep_known_nmis(accounts, now)
+    except Exception as e:
+        print(f"  ERROR during known-NMI sweep: {e}")
+
     print(f"\n  Total rows saved across all accounts: {grand_total}")
+
+
+def sweep_known_nmis(accounts, now):
+    known = supabase_get_setting("lv_known_nmis") or []
+    if not isinstance(known, list) or not known:
+        return 0
+
+    # NMIs already pulled by an account's explicit config (skip those).
+    configured = set()
+    for a in accounts:
+        for n in (a.get("nmis") or []):
+            if n:
+                configured.add(n)
+        single = a.get("nmi")
+        if single and single != "*":
+            configured.add(single)
+
+    uncovered = [n for n in known if n and n not in configured]
+    if not uncovered:
+        return 0
+
+    print(f"\n  Known-NMI sweep: {len(uncovered)} NMI(s) not tied to an account: {uncovered}")
+    total = 0
+    accts = [a for a in accounts if a.get("apikey") and a.get("partner")]
+    for nmi in uncovered:
+        saved_for_nmi = 0
+        for a in accts:
+            try:
+                saved = _sync_one_nmi(dict(a, nmi=nmi), now, f"[sweep {nmi} via {a.get('label','?')}]")
+            except Exception as e:
+                print(f"    sweep error for {nmi} via {a.get('label','?')}: {e}")
+                saved = 0
+            if saved > 0:
+                saved_for_nmi += saved
+                break  # first authorised account wins — stop trying others
+        if saved_for_nmi == 0:
+            print(f"    No account returned data for {nmi}")
+        total += saved_for_nmi
+    return total
 
 if __name__ == "__main__":
     main()
