@@ -2305,6 +2305,41 @@ function exportComparisonCSV() {
 }
 
 /* ---- LIVE ---- */
+// Find the nearest interval to "now" that has a real numeric rate for `field`.
+// Used so the live view can show the forecast/indicative price even when the
+// current interval has none (e.g. a meter drawing 0 kWh — LocalVolts returns
+// "N/A" for the rate whenever there is no usage). Prefers the current/next
+// interval; falls back to the most recent past interval that had a rate.
+function nearestRate(rows, field) {
+  if (!Array.isArray(rows)) return null;
+  var now = Date.now();
+  var cand = [];
+  rows.forEach(function(r) {
+    var v = safeNum(r[field]);
+    if (v === null) return;
+    var t = new Date(r.intervalEnd).getTime();
+    if (!isNaN(t)) cand.push({ t: t, v: v });
+  });
+  if (!cand.length) return null;
+  // current or upcoming interval (allow the in-progress 5-min interval)
+  var fut = cand.filter(function(x) { return x.t >= now - 300000; })
+                .sort(function(a, b) { return a.t - b.t; });
+  if (fut.length) return { v: fut[0].v, future: fut[0].t > now + 300000 };
+  cand.sort(function(a, b) { return b.t - a.t; });
+  return { v: cand[0].v, future: false, stale: true };
+}
+
+// Build a rate display string. If the current interval has a real rate, show it.
+// Otherwise show the nearest forecast rate (labelled), so the field is never
+// just blank when a price is knowable from the forecast ahead.
+function rateDisplay(currentVal, rows, field) {
+  var cur = safeNum(currentVal);
+  if (cur !== null) return cur.toFixed(4);
+  var nr = nearestRate(rows, field);
+  if (nr) return nr.v.toFixed(4) + (nr.stale ? ' (last)' : ' (fcst)');
+  return '\u2014';
+}
+
 async function loadLive() {
   setTxt('live-status-text','Fetching...');
   document.getElementById('live-loading').style.display='block';
@@ -2351,9 +2386,9 @@ async function loadLive() {
 
     document.getElementById('financial-rows').innerHTML =
       dRow('Total earnings', '$'+(earn/100).toFixed(4), 'AUD') +
-      dRow('Earn rate', fmt(d.earningsAllVarRate,4), d.earningsAllVarRateUnits||'c/kWh') +
+      dRow('Earn rate', rateDisplay(d.earningsAllVarRate, liveRawData, 'earningsAllVarRate'), d.earningsAllVarRateUnits||'c/kWh') +
       dRow('Total costs', '$'+(cost/100).toFixed(4), 'AUD') +
-      dRow('Cost rate', fmt(d.costsAllVarRate,4), d.costsAllVarRateUnits||'c/kWh') +
+      dRow('Cost rate', rateDisplay(d.costsAllVarRate, liveRawData, 'costsAllVarRate'), d.costsAllVarRateUnits||'c/kWh') +
       dRow('Demand cost', fmt(d.costsDemandMain,4), d.costsDemandMainUnits||'c/kW/Day');
 
     document.getElementById('flex-cost-rows').innerHTML =
