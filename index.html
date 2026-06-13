@@ -2645,7 +2645,7 @@ async function loadDaily() {
       var mStartUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth(),1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
       var mEndUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth()+1,1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
       var peakNmi=nmi!=='*'?'&nmi=eq.'+encodeURIComponent(nmi):'';
-      var peakUrl=sbUrl+'/rest/v1/lv_intervals?select=interval_end,demand_main_kw&quality=neq.Fcst'+peakNmi+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&limit=10000';
+      var peakUrl=sbUrl+'/rest/v1/lv_intervals?select=interval_end,demand_main_kw&quality=not.in.(Fcst,Exp)'+peakNmi+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&limit=10000';
       var peakResp=await fetch(peakUrl,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
       var peakData=await peakResp.json();
       // Group into 30-min buckets; avg kW per bucket = sum(demand_main_kw)/3
