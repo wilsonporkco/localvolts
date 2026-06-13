@@ -2638,18 +2638,25 @@ async function loadDaily() {
     csvData.daily=filtered;
     var tImp=0,tExp=0,tCost=0,tEarn=0;
     filtered.forEach(function(r){ tImp+=parseFloat(r.imports_kwh)||0; tExp+=parseFloat(r.exports_kwh)||0; tCost+=parseFloat(r.costs_cents)||0; tEarn+=parseFloat(r.earnings_cents)||0; });
-    // Add monthly peak demand charge (billing period peak, excl. forecast, incl. GST)
+    // Add monthly demand charge using 30-min averaged demand (matches LV billing methodology)
     var demandRate=filtered.reduce(function(m,r){return Math.max(m,parseFloat(r.costs_demand)||0);},0);
     if(demandRate>0){
       var selDate=new Date(dv+'T00:00:00+10:00');
       var mStartUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth(),1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
       var mEndUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth()+1,1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
       var peakNmi=nmi!=='*'?'&nmi=eq.'+encodeURIComponent(nmi):'';
-      var peakUrl=sbUrl+'/rest/v1/lv_intervals?select=demand_main_kw&quality=neq.Fcst'+peakNmi+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&order=demand_main_kw.desc&limit=1';
+      var peakUrl=sbUrl+'/rest/v1/lv_intervals?select=interval_end,demand_main_kw&quality=neq.Fcst'+peakNmi+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&limit=10000';
       var peakResp=await fetch(peakUrl,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
       var peakData=await peakResp.json();
-      var monthlyPeakRaw=peakData.length?(parseFloat(peakData[0].demand_main_kw)||0):0;
-      tCost+=monthlyPeakRaw*2*demandRate*1.1;
+      // Group into 30-min buckets; avg kW per bucket = sum(demand_main_kw)/3
+      var buckets={};
+      peakData.forEach(function(r){
+        var ts=Math.floor(new Date(r.interval_end).getTime()/(30*60*1000))*(30*60*1000);
+        if(buckets[ts]===undefined){buckets[ts]=0;}
+        buckets[ts]=(buckets[ts]||0)+(parseFloat(r.demand_main_kw)||0);
+      });
+      var maxAvgKw=Object.values(buckets).reduce(function(m,s){return Math.max(m,s/3);},0);
+      tCost+=maxAvgKw*demandRate*1.1;
     }
     var net=tEarn-tCost;
 
