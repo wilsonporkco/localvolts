@@ -2638,22 +2638,22 @@ async function loadDaily() {
     csvData.daily=filtered;
     var tImp=0,tExp=0,tCost=0,tEarn=0;
     filtered.forEach(function(r){ tImp+=parseFloat(r.imports_kwh)||0; tExp+=parseFloat(r.exports_kwh)||0; tCost+=parseFloat(r.costs_cents)||0; tEarn+=parseFloat(r.earnings_cents)||0; });
-    // Add monthly demand charge using 30-min averaged demand (matches LV billing methodology)
-    var demandRate=filtered.reduce(function(m,r){return Math.max(m,parseFloat(r.costs_demand)||0);},0);
+    // Add monthly demand charge — only for NMIs listed in lv_settings 'demand_nmis'
+    var demandNmis=window._demandNmis||[];
+    var demandRate=(nmi!=='*'&&demandNmis.indexOf(nmi)>=0)?filtered.reduce(function(m,r){return Math.max(m,parseFloat(r.costs_demand)||0);},0):0;
     if(demandRate>0){
       var selDate=new Date(dv+'T00:00:00+10:00');
       var mStartUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth(),1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
       var mEndUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth()+1,1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
-      var peakNmi=nmi!=='*'?'&nmi=eq.'+encodeURIComponent(nmi):'';
+      var peakNmi='&nmi=eq.'+encodeURIComponent(nmi);
       var peakUrl=sbUrl+'/rest/v1/lv_intervals?select=interval_end,demand_main_kw&quality=not.in.(Fcst,Exp)'+peakNmi+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&limit=10000';
       var peakResp=await fetch(peakUrl,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
       var peakData=await peakResp.json();
-      // Group into 30-min buckets; avg kW per bucket = sum(demand_main_kw)/3
       var buckets={};
       peakData.forEach(function(r){
         var ts=Math.floor(new Date(r.interval_end).getTime()/(30*60*1000))*(30*60*1000);
         if(buckets[ts]===undefined){buckets[ts]=0;}
-        buckets[ts]=(buckets[ts]||0)+(parseFloat(r.demand_main_kw)||0);
+        buckets[ts]+=(parseFloat(r.demand_main_kw)||0);
       });
       var maxAvgKw=Object.values(buckets).reduce(function(m,s){return Math.max(m,s/3);},0);
       tCost+=maxAvgKw*demandRate*1.1;
@@ -2963,7 +2963,16 @@ function showRateSelection(i1, i2) {
 function clearRateSelection() {
   var h = document.getElementById('rate-sel-highlight');
   var s = document.getElementById('rate-selection-summary');
-  if (h) h.style.display = 'none';
+  if (h) h.style.dis// Load demand-enabled NMIs from lv_settings
+window._demandNmis = [];
+(async function(){
+  try {
+    var d = await sbSettingsLoad('demand_nmis');
+    if (Array.isArray(d)) window._demandNmis = d;
+  } catch(e) {}
+})();
+
+play = 'none';
   if (s) s.style.display = 'none';
 }
 
