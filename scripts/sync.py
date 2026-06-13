@@ -238,7 +238,7 @@ def _sync_one_nmi(account, now, label):
     print(f"\n  Account: {label} (partner={account.get('partner')}, NMI={nmi})")
 
     if HOURS_BACK == 0:
-        from_dt = now - timedelta(hours=6)
+        from_dt = now - timedelta(hours=48)  # 48h lookback picks up P2P settlements from prior 2 days
         print(f"    Mode: live fetch (6hr lookback + forecast, from {from_dt.strftime('%H:%MZ')})")
         total = fetch_and_save(account, from_dt=from_dt, label="(live+lookback)")
     else:
