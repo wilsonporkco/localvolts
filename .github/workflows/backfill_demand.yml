@@ -1,0 +1,28 @@
+name: Demand backfill
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill-demand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run demand backfill
+        env:
+          LV_ACCOUNTS:  ${{ secrets.LV_ACCOUNTS }}
+          LV_API_KEY:   ${{ secrets.LV_API_KEY }}
+          LV_PARTNER:   ${{ secrets.LV_PARTNER }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          LV_NMI:       "*"
+        run: python scripts/backfill_demand.py
