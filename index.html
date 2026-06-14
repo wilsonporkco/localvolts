@@ -2652,25 +2652,11 @@ async function loadDaily() {
       var mStartUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth(),1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
       var mEndUTC=new Date(new Date(selDate.getFullYear(),selDate.getMonth()+1,1).getTime()-10*3600000).toISOString().replace(/\.\d+Z$/,'Z');
       var peakNmiFilter='&nmi=eq.'+encodeURIComponent(nmi);
-      var peakMethod=demandCfg.method||'30min';
       var maxPeakKw=0;
-      if(peakMethod==='5min'){
-        var p5Url=sbUrl+'/rest/v1/lv_intervals?select=demand_main_kw&quality=not.in.(Fcst,Exp)'+peakNmiFilter+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&order=demand_main_kw.desc&limit=1';
-        var p5Resp=await fetch(p5Url,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
-        var p5Data=await p5Resp.json();
-        maxPeakKw=p5Data.length?(parseFloat(p5Data[0].demand_main_kw)||0)*2:0;
-      } else {
-        var p30Url=sbUrl+'/rest/v1/lv_intervals?select=interval_end,demand_main_kw&quality=not.in.(Fcst,Exp)'+peakNmiFilter+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&limit=10000';
-        var p30Resp=await fetch(p30Url,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
-        var p30Data=await p30Resp.json();
-        var buckets={};
-        p30Data.forEach(function(r){
-          var ts=Math.floor(new Date(r.interval_end).getTime()/(30*60*1000))*(30*60*1000);
-          if(buckets[ts]===undefined){buckets[ts]=0;}
-          buckets[ts]+=(parseFloat(r.demand_main_kw)||0);
-        });
-        maxPeakKw=Object.values(buckets).reduce(function(m,s){return Math.max(m,s/3);},0);
-      }
+      var pkUrl=sbUrl+'/rest/v1/lv_demand?select=demand_main_kw&quality=not.in.(Fcst,Exp)'+peakNmiFilter+'&interval_end=gte.'+mStartUTC+'&interval_end=lt.'+mEndUTC+'&order=demand_main_kw.desc&limit=1';
+      var pkResp=await fetch(pkUrl,{headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey}});
+      var pkData=await pkResp.json();
+      maxPeakKw=pkData.length?(parseFloat(pkData[0].demand_main_kw)||0)*2:0;
       tCost+=maxPeakKw*demandRate*1.1;
     }
     var net=tEarn-tCost;
