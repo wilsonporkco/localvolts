@@ -166,6 +166,17 @@ def transform(r):
         "raw": json.dumps(r),
     }
 
+def transform_demand(r):
+    """Extract demand fields from a 30-min interval for lv_demand storage."""
+    return {
+        "nmi": r.get("NMI"),
+        "interval_end": r.get("intervalEnd"),
+        "interval_duration": r.get("intervalDuration"),
+        "demand_main_kw": safe_float(r.get("demandMain")),
+        "costs_demand": safe_float(r.get("costsDemandMain")),
+        "quality": r.get("quality"),
+    }
+
 def supabase_upsert(rows):
     url = f"{SUPABASE_URL}/rest/v1/lv_intervals?on_conflict=nmi,interval_end"
     payload = json.dumps(rows).encode()
@@ -180,6 +191,21 @@ def supabase_upsert(rows):
             return r.status
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Supabase {e.code}: {e.read().decode()[:200]}")
+
+def supabase_upsert_demand(rows):
+    url = f"{SUPABASE_URL}/rest/v1/lv_demand?on_conflict=nmi,interval_end"
+    payload = json.dumps(rows).encode()
+    req = urllib.request.Request(url, data=payload, headers={
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal",
+    }, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Supabase lv_demand {e.code}: {e.read().decode()[:200]}")
 
 def fetch_and_save(account, from_dt=None, to_dt=None, label=""):
     raw = lv_fetch(account, from_dt, to_dt)
@@ -197,6 +223,7 @@ def fetch_and_save(account, from_dt=None, to_dt=None, label=""):
             return True  # keep if duration is unknown
 
     valid = [r for r in raw if r.get("NMI") and r.get("intervalEnd") and is_five_min(r)]
+    demand_30min = [r for r in raw if r.get("NMI") and r.get("intervalEnd") and not is_five_min(r) and safe_float(r.get("demandMain"))]
 
     qualities = {}
     durations = {}
@@ -212,6 +239,13 @@ def fetch_and_save(account, from_dt=None, to_dt=None, label=""):
     for i in range(0, len(rows), 500):
         status = supabase_upsert(rows[i:i+500])
         print(f"    Batch {i//500+1}: HTTP {status}")
+    # Save 30-min interval demand data to lv_demand table
+    if demand_30min:
+        demand_rows = [transform_demand(r) for r in demand_30min]
+        for i in range(0, len(demand_rows), 500):
+            status = supabase_upsert_demand(demand_rows[i:i+500])
+            print(f"    Demand batch {i//500+1}: HTTP {status} ({len(demand_rows[i:i+500])} rows)")
+
     return len(rows)
 
 def sync_account(account, now):
