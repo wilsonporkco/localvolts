@@ -4288,11 +4288,13 @@ async function loadBattPriceChart() {
 
     var now     = Date.now();
     var future  = data.filter(function(r) {
-      return new Date(r.intervalDatetime).getTime() >= now - 300000;
+      var ts = r.intervalEnd || r.intervalDatetime || '';
+      return new Date(ts).getTime() >= now - 300000;
     }).slice(0, 144); // 12 hours @ 5-min
 
     var labels = future.map(function(r) {
-      return new Date(r.intervalDatetime).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+      var ts = r.intervalEnd || r.intervalDatetime || '';
+      return new Date(ts).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
     });
     var costs  = future.map(function(r) { return parseFloat(r.costsAllVarRate) || null; });
     var earn   = future.map(function(r) { return parseFloat(r.earningsAllVarRate) || null; });
@@ -4343,18 +4345,16 @@ async function loadBattSocChart() {
     var hist = await sbSettingsLoad('batt_history');
     if (!hist || !hist.length) return;
 
-    // Limit to selected hours window (5-min intervals)
-    var maxEntries = _battSocHours * 12;
-    if (hist.length > maxEntries) hist = hist.slice(hist.length - maxEntries);
+    // Filter to only entries within the selected time window by actual timestamp
+    var cutoff = Date.now() - _battSocHours * 3600000;
+    hist = hist.filter(function(r) { return r.ts && new Date(r.ts).getTime() >= cutoff; });
+    if (!hist.length) return;
 
-    var labels  = hist.map(function(r) {
+    // Always show date + time so repeated times on different days are unambiguous
+    var labels = hist.map(function(r) {
       var d = new Date(r.ts);
-      // Show date+time if window > 24h so you can tell days apart
-      if (_battSocHours > 24) {
-        return d.toLocaleDateString('en-AU',{day:'numeric',month:'short'}) + ' ' +
-               d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
-      }
-      return d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+      return d.toLocaleDateString('en-AU',{day:'numeric',month:'short'}) + ' ' +
+             d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
     });
     var socs    = hist.map(function(r) { return r.soc != null ? parseFloat(r.soc) : null; });
     var prices  = hist.map(function(r) { return r.price != null ? parseFloat(r.price) : null; });
