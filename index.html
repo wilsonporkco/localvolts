@@ -2043,7 +2043,7 @@ async function sbQuery(table, fromTs, toTs, nmiFilter, limitN, selectCols, extra
   parts.push('limit='+(limitN||500));
   var url = sbUrl+'/rest/v1/'+table+'?'+parts.join('&');
   console.log('Supabase URL:', url.substring(0,200));
-  var res = await fetch(url, { headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey,'Accept':'application/json'} });
+  var res = await fetch(url, { headers:{'apikey':sbKey,'Authorization':'Bearer '+sbKey,'Accept':'application/json','Prefer':'statement-timeout=25000'} });
   var text = await res.text();
   var data; try { data=JSON.parse(text); } catch(e) { throw new Error('Supabase parse error: '+text.slice(0,100)); }
   if (!res.ok) throw new Error('Supabase: '+(data.message||data.error||text.slice(0,80)));
@@ -2166,30 +2166,31 @@ async function loadComparison() {
     var to = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
     var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
-    // Query the pre-aggregated daily view — 1 row per NMI per day, no row-limit issues
-    var nowAEST = new Date(Date.now() + 10 * 3600000);
-    var todayStr = nowAEST.toISOString().substring(0, 10);
-    var fromDateStr = new Date(nowAEST.getTime() - daysBack * 24 * 3600000).toISOString().substring(0, 10);
-    var rows = await sbQuery('lv_daily', null, null, null, 1000,
-      'nmi,aest_date,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      ['aest_date=gte.' + fromDateStr, 'aest_date=lte.' + todayStr, 'order=aest_date.asc']);
+    // Query lv_intervals directly (fast — uses index on interval_end) and aggregate client-side
+    var rows = await sbQuery('lv_intervals', from, to, null, 5000,
+      'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
+      ['order=interval_end.asc']);
 
     if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
-    // Aggregate by AEST day × NMI (view already pre-aggregated, this just organises into structure)
+    // Aggregate by AEST day × NMI
     var dayNmi = {};
     var nmiSet = {};
     rows.forEach(function(r) {
-      var day = r.aest_date;
       var nmi = r.nmi; if (!nmi) return;
+      // Convert UTC interval_end → AEST date string (UTC+10)
+      var aestMs = new Date(r.interval_end).getTime() + 10 * 3600000;
+      var day = new Date(aestMs).toISOString().substring(0, 10);
       nmiSet[nmi] = true;
       if (!dayNmi[day]) dayNmi[day] = {};
-      // View already gives one pre-aggregated row per NMI per day
       if (!dayNmi[day][nmi]) dayNmi[day][nmi] = { imports: 0, exports: 0, costs: 0, earnings: 0, quality: r.quality || 'Act' };
       dayNmi[day][nmi].imports  += parseFloat(r.imports_kwh)  || 0;
       dayNmi[day][nmi].exports  += parseFloat(r.exports_kwh)  || 0;
       dayNmi[day][nmi].costs    += parseFloat(r.costs_cents)   || 0;
       dayNmi[day][nmi].earnings += parseFloat(r.earnings_cents)|| 0;
+      // Prefer 'Act' quality over 'Exp' or 'Fcst'
+      if (r.quality === 'Act') dayNmi[day][nmi].quality = 'Act';
+      else if (r.quality === 'Exp' && dayNmi[day][nmi].quality !== 'Act') dayNmi[day][nmi].quality = 'Exp';
     });
 
     var days = Object.keys(dayNmi).sort().reverse().slice(0, daysBack); // newest first, capped to selection
