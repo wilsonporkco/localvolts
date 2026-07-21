@@ -910,7 +910,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
               <div style="height:160px;"><canvas id="batt-price-chart"></canvas></div>
             </div>
             <div class="chart-card">
-              <div class="chart-title" style="margin-bottom:10px;">Battery SOC — Last 24 Hours</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div class="chart-title">Battery SOC — <span id="batt-soc-hours-label">Last 24 Hours</span></div>
+                <div style="display:flex;gap:4px;">
+                  <button onclick="setBattSocHours(24)" id="batt-soc-btn-24" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #d1d5db;background:#10b981;color:#fff;cursor:pointer;">24h</button>
+                  <button onclick="setBattSocHours(48)" id="batt-soc-btn-48" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;color:#374151;cursor:pointer;">48h</button>
+                  <button onclick="setBattSocHours(72)" id="batt-soc-btn-72" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;color:#374151;cursor:pointer;">72h</button>
+                </div>
+              </div>
               <div style="height:160px;"><canvas id="batt-soc-chart"></canvas></div>
             </div>
           </div>
@@ -4314,6 +4321,21 @@ async function loadBattPriceChart() {
 
 // ── Battery SOC history chart ─────────────────────────────────────────────────
 var _battSocChart = null;
+var _battSocHours = 24;
+
+function setBattSocHours(h) {
+  _battSocHours = h;
+  ['24','48','72'].forEach(function(x) {
+    var btn = document.getElementById('batt-soc-btn-'+x);
+    if (!btn) return;
+    btn.style.background = (parseInt(x) === h) ? '#10b981' : '#fff';
+    btn.style.color      = (parseInt(x) === h) ? '#fff'    : '#374151';
+  });
+  var lbl = document.getElementById('batt-soc-hours-label');
+  if (lbl) lbl.textContent = 'Last ' + h + ' Hours';
+  loadBattSocChart();
+}
+
 async function loadBattSocChart() {
   var canvas = document.getElementById('batt-soc-chart');
   if (!canvas) return;
@@ -4321,8 +4343,18 @@ async function loadBattSocChart() {
     var hist = await sbSettingsLoad('batt_history');
     if (!hist || !hist.length) return;
 
+    // Limit to selected hours window (5-min intervals)
+    var maxEntries = _battSocHours * 12;
+    if (hist.length > maxEntries) hist = hist.slice(hist.length - maxEntries);
+
     var labels  = hist.map(function(r) {
-      return new Date(r.ts).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+      var d = new Date(r.ts);
+      // Show date+time if window > 24h so you can tell days apart
+      if (_battSocHours > 24) {
+        return d.toLocaleDateString('en-AU',{day:'numeric',month:'short'}) + ' ' +
+               d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+      }
+      return d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
     });
     var socs    = hist.map(function(r) { return r.soc != null ? parseFloat(r.soc) : null; });
     var prices  = hist.map(function(r) { return r.price != null ? parseFloat(r.price) : null; });
