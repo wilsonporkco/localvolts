@@ -2170,25 +2170,23 @@ async function loadComparison() {
 
   try {
     var daysBack = parseInt(document.getElementById('comparison-days').value || '14', 10);
-    // Go back up to 90 days to find data — handles gaps in sync history
-    var from = new Date(Date.now() - 90 * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
-    // Fetch newest-first, no upper bound — always returns most recent available data
-    var rows = await sbQuery('lv_intervals', from, null, null, 20000,
-      'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      ['order=interval_end.desc']);
-    rows = rows.reverse(); // back to asc for aggregation
+    // Use lv_daily (1 row per NMI per day) — avoids Supabase row-limit issues with raw intervals
+    var nowAEST = new Date(Date.now() + 10 * 3600000);
+    var todayStr = nowAEST.toISOString().substring(0, 10);
+    var fromDateStr = new Date(nowAEST.getTime() - daysBack * 24 * 3600000).toISOString().substring(0, 10);
+    var rows = await sbQuery('lv_daily', null, null, null, 2000,
+      'nmi,aest_date,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
+      ['aest_date=gte.' + fromDateStr, 'aest_date=lte.' + todayStr, 'order=aest_date.asc']);
 
-    if (!rows.length) throw new Error('No data found in Supabase.');
+    if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
     // Aggregate by AEST day × NMI
     var dayNmi = {};
     var nmiSet = {};
     rows.forEach(function(r) {
+      var day = r.aest_date;
       var nmi = r.nmi; if (!nmi) return;
-      // Convert UTC interval_end → AEST date string (UTC+10)
-      var aestMs = new Date(r.interval_end).getTime() + 10 * 3600000;
-      var day = new Date(aestMs).toISOString().substring(0, 10);
       nmiSet[nmi] = true;
       if (!dayNmi[day]) dayNmi[day] = {};
       if (!dayNmi[day][nmi]) dayNmi[day][nmi] = { imports: 0, exports: 0, costs: 0, earnings: 0, quality: r.quality || 'Act' };
@@ -2196,7 +2194,6 @@ async function loadComparison() {
       dayNmi[day][nmi].exports  += parseFloat(r.exports_kwh)  || 0;
       dayNmi[day][nmi].costs    += parseFloat(r.costs_cents)   || 0;
       dayNmi[day][nmi].earnings += parseFloat(r.earnings_cents)|| 0;
-      // Prefer 'Act' quality over 'Exp' or 'Fcst'
       if (r.quality === 'Act') dayNmi[day][nmi].quality = 'Act';
       else if (r.quality === 'Exp' && dayNmi[day][nmi].quality !== 'Act') dayNmi[day][nmi].quality = 'Exp';
     });
