@@ -2173,10 +2173,11 @@ async function loadComparison() {
     var to = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
     var from = new Date(Date.now() - daysBack * 24 * 3600000).toISOString().replace(/\.\d+Z$/, 'Z');
 
-    // Query lv_intervals directly (fast — uses index on interval_end) and aggregate client-side
-    var rows = await sbQuery('lv_intervals', from, to, null, 5000,
+    // Query lv_intervals directly — fetch newest first so the limit keeps the most recent days
+    var rows = await sbQuery('lv_intervals', from, to, null, 20000,
       'nmi,interval_end,imports_kwh,exports_kwh,costs_cents,earnings_cents,quality',
-      ['order=interval_end.asc']);
+      ['order=interval_end.desc']);
+    rows = rows.reverse(); // back to asc for aggregation
 
     if (!rows.length) throw new Error('No data found in the last ' + daysBack + ' days in Supabase.');
 
