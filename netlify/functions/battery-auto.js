@@ -216,28 +216,20 @@ exports.handler = async (event) => {
   try {
     // 1 ── Load rule settings from Supabase
     const rules = await sbGet('batt_rules');
-    if (!rules || !rules.enabled) {
-      logEntry.reason = 'Auto-rule disabled';
-      await sbSet('batt_auto_log', logEntry);
-      return { statusCode: 200 };
-    }
+    const autoEnabled = rules && rules.enabled;
+    // Note: we continue even when disabled so SOC/price history is always recorded
 
-    const threshold     = parseFloat(rules.threshold     ?? 5);
-    const minSoc        = parseFloat(rules.minSoc        ?? 15);
-    const maxSoc        = parseFloat(rules.maxSoc        ?? 90);
-    const sellThreshold = parseFloat(rules.sellThreshold ?? 20);
-    const sellMinSoc    = parseFloat(rules.sellMinSoc    ?? 20);
-    const sellStopSoc   = parseFloat(rules.sellStopSoc   ?? 20);
-    const chargeKw      = rules.chargeKw != null ? parseFloat(rules.chargeKw) : null;
-    const sellKw        = rules.sellKw   != null ? parseFloat(rules.sellKw)   : null;
-    const sellEnabled   = rules.sellEnabled !== false;  // default true; set false to disable sell rule
+    const threshold     = parseFloat((rules||{}).threshold     ?? 5);
+    const minSoc        = parseFloat((rules||{}).minSoc        ?? 15);
+    const maxSoc        = parseFloat((rules||{}).maxSoc        ?? 90);
+    const sellThreshold = parseFloat((rules||{}).sellThreshold ?? 20);
+    const sellMinSoc    = parseFloat((rules||{}).sellMinSoc    ?? 20);
+    const sellStopSoc   = parseFloat((rules||{}).sellStopSoc   ?? 20);
+    const sellEnabled   = (rules||{}).sellEnabled !== false;
 
-    // 2 ── Identify NMI (systemId no longer required — consumer API handles control)
-    const systemId = rules.systemId || null;
-    let nmi        = rules.nmi      || null;
-
-    // Fallback: if batt_rules has no NMI (e.g. a client saved with it blank),
-    // use the NMI the battery system is mapped to in sigen_systems (source of truth).
+    // 2 ── Identify NMI
+    const systemId = (rules||{}).systemId || null;
+    let nmi        = (rules||{}).nmi      || null;
     if (!nmi) {
       try {
         const systems = await sbGet('sigen_systems');
@@ -249,20 +241,10 @@ exports.handler = async (event) => {
       } catch (e) {}
     }
 
-
-    if (!nmi) {
-      logEntry.reason = 'No NMI mapped — set it in Battery → Settings';
-      logEntry.error  = 'missing_nmi';
-      await sbSet('batt_auto_log', logEntry);
-      return { statusCode: 200 };
-    }
-
-    // 3 ── Get current SOC via consumer API (avoids developer API access restrictions)
+    // 3 ── Get current SOC (always — needed for history even when auto is off)
     const cTok     = await getConsumerToken();
     const cStation = await getConsumerStationId(cTok);
     let soc = -1;
-
-    // Try consumer energyFlow endpoint
     try {
       const flowRes  = await fetch(`${CBASE}/device/sigen/station/energyflow?id=${cStation}`, {
         headers: { 'Authorization': `Bearer ${cTok}` }
@@ -275,97 +257,81 @@ exports.handler = async (event) => {
         soc = parseFloat(flow.batterySoc ?? flow.soc ?? flow.storageSoc ?? -1);
       }
     } catch(e) {
-      console.log('[battery-auto] consumer energyFlow failed, trying developer API:', e.message);
+      console.log('[battery-auto] consumer energyFlow failed:', e.message);
     }
-
-    // Fallback: developer API energyFlow
-    if (soc < 0) {
-      const flowJson2 = await sigenGet(`/openapi/systems/${systemId}/energyFlow`, { systemId });
-      if (flowJson2.code === 0) {
-        let flow2 = flowJson2.data;
-        if (typeof flow2 === 'string') flow2 = JSON.parse(flow2);
-        soc = parseFloat(flow2.batterySoc ?? flow2.soc ?? -1);
-      }
+    if (soc < 0 && systemId) {
+      try {
+        const flowJson2 = await sigenGet(`/openapi/systems/${systemId}/energyFlow`, { systemId });
+        if (flowJson2.code === 0) {
+          let flow2 = flowJson2.data;
+          if (typeof flow2 === 'string') flow2 = JSON.parse(flow2);
+          soc = parseFloat(flow2.batterySoc ?? flow2.soc ?? -1);
+        }
+      } catch(e) {}
     }
-
     logEntry.soc = soc;
 
-    if (soc < 0) {
-      logEntry.reason = 'Could not read SOC from energyFlow response';
-      logEntry.error  = 'soc_unavailable';
-      await sbSet('batt_auto_log', logEntry);
-      return { statusCode: 200 };
+    // 4 ── Get current LocalVolts prices (always — needed for history)
+    let importPrice = NaN, exportPrice = NaN;
+    if (nmi) {
+      try { ({ importPrice, exportPrice } = await getLvPrices(nmi)); } catch(e) {}
     }
-
-    // 4 ── Get current LocalVolts prices
-    const { importPrice, exportPrice } = await getLvPrices(nmi);
     logEntry.price        = importPrice;
     logEntry.exportPrice  = exportPrice;
     logEntry.threshold    = threshold;
     logEntry.sellThreshold = sellThreshold;
 
-    const isCheap    = importPrice <= threshold;
-    const socTooHigh = soc >= maxSoc;
-    const socTooLow  = soc <= minSoc;
-    const canSell    = !isNaN(exportPrice) && exportPrice >= sellThreshold && soc > sellMinSoc;
-    const sellFloor  = soc <= sellStopSoc;
-
-    // 5 ── Decide action
-    // Load previous action from log so we know the previous state
-    const prevLog     = await sbGet('batt_auto_log') || {};
-    const wasCharging = prevLog.action === 'grid_charge';
-    const wasSelling  = prevLog.action === 'feed_in';
-
-    // 5 ── Decide and act — always set mode regardless of previous state
-    if (sellEnabled && canSell && !sellFloor) {
-      // ── FEED-IN / SELL ────────────────────────────────────────────────────
-      logEntry.action = 'feed_in';
-      logEntry.reason = `Export ${exportPrice.toFixed(2)} c/kWh ≥ sell threshold ${sellThreshold} c/kWh, SOC ${soc.toFixed(1)}% > floor ${sellMinSoc}%`;
-      const modeResult = await consumerSetMode(5);  // 5 = Fully Fed to Grid
-      logEntry.cmdResult = modeResult;
-
-    } else if (isCheap && !socTooHigh && !socTooLow) {
-      // ── GRID CHARGE ──────────────────────────────────────────────────────
-      logEntry.action = 'grid_charge';
-      logEntry.reason = `Import ${importPrice.toFixed(2)} c/kWh ≤ threshold ${threshold} c/kWh, SOC ${soc.toFixed(1)}% < max ${maxSoc}%`;
-
-      // Grid charge: find the 'GridCharge' custom energy profile and activate it
-      const cTok3       = await getConsumerToken();
-      const cStation3   = await getConsumerStationId(cTok3);
-      const modesRes    = await fetch(`${CBASE}/device/energy-profile/mode/all/${cStation3}`, {
-        headers: { 'Authorization': `Bearer ${cTok3}` }
-      });
-      const modesJson   = await modesRes.json();
-      const profiles    = (modesJson.data && modesJson.data.energyProfileItems) || [];
-      const gcProfile   = profiles.find(function(p) {
-        return p.name && p.name.toLowerCase().replace(/\s/g,'') === 'gridcharge';
-      });
-      let cmdResult;
-      if (gcProfile) {
-        // Activate GridCharge custom profile (operationMode 9 = custom, profileId from app)
-        cmdResult = await fetch(`${CBASE}/device/energy-profile/mode`, {
-          method:  'PUT',
-          headers: { 'Authorization': `Bearer ${cTok3}`, 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ stationId: cStation3, operationMode: 9, profileId: gcProfile.profileId })
-        }).then(function(r){ return r.json(); });
-        logEntry.profileId = gcProfile.profileId;
-      } else {
-        // Fallback: TOU mode
-        cmdResult = await consumerSetMode(2);
-        logEntry.reason += ' (GridCharge profile not found — used TOU fallback)';
-      }
-      logEntry.cmdResult = cmdResult;
-
+    // 5 ── Mode control — only when auto is enabled and we have NMI + valid SOC
+    if (!autoEnabled) {
+      logEntry.reason = 'Auto-rule disabled';
+    } else if (!nmi) {
+      logEntry.reason = 'No NMI mapped — set it in Battery → Settings';
+      logEntry.error  = 'missing_nmi';
+    } else if (soc < 0) {
+      logEntry.reason = 'Could not read SOC from energyFlow response';
+      logEntry.error  = 'soc_unavailable';
     } else {
-      // ── DEFAULT: Time of Use — use configured TOU schedule ────────────────
-      logEntry.action = 'self_consume';
-      if (socTooHigh) {
-        logEntry.reason = `SOC ${soc.toFixed(1)}% ≥ max ${maxSoc}% — returning to TOU`;
+      const isCheap    = importPrice <= threshold;
+      const socTooHigh = soc >= maxSoc;
+      const socTooLow  = soc <= minSoc;
+      const canSell    = !isNaN(exportPrice) && exportPrice >= sellThreshold && soc > sellMinSoc;
+      const sellFloor  = soc <= sellStopSoc;
+
+      if (sellEnabled && canSell && !sellFloor) {
+        logEntry.action = 'feed_in';
+        logEntry.reason = `Export ${exportPrice.toFixed(2)} c/kWh ≥ sell threshold ${sellThreshold} c/kWh, SOC ${soc.toFixed(1)}% > floor ${sellMinSoc}%`;
+        logEntry.cmdResult = await consumerSetMode(5);
+
+      } else if (isCheap && !socTooHigh && !socTooLow) {
+        logEntry.action = 'grid_charge';
+        logEntry.reason = `Import ${importPrice.toFixed(2)} c/kWh ≤ threshold ${threshold} c/kWh, SOC ${soc.toFixed(1)}% < max ${maxSoc}%`;
+        const cTok3     = await getConsumerToken();
+        const cStation3 = await getConsumerStationId(cTok3);
+        const modesRes  = await fetch(`${CBASE}/device/energy-profile/mode/all/${cStation3}`, {
+          headers: { 'Authorization': `Bearer ${cTok3}` }
+        });
+        const modesJson  = await modesRes.json();
+        const profiles   = (modesJson.data && modesJson.data.energyProfileItems) || [];
+        const gcProfile  = profiles.find(p => p.name && p.name.toLowerCase().replace(/\s/g,'') === 'gridcharge');
+        if (gcProfile) {
+          logEntry.cmdResult = await fetch(`${CBASE}/device/energy-profile/mode`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${cTok3}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stationId: cStation3, operationMode: 9, profileId: gcProfile.profileId })
+          }).then(r => r.json());
+          logEntry.profileId = gcProfile.profileId;
+        } else {
+          logEntry.cmdResult = await consumerSetMode(2);
+          logEntry.reason += ' (GridCharge profile not found — used TOU fallback)';
+        }
+
       } else {
-        logEntry.reason = `Price ${importPrice.toFixed(2)} c/kWh > threshold — returning to TOU`;
+        logEntry.action = 'self_consume';
+        logEntry.reason = socTooHigh
+          ? `SOC ${soc.toFixed(1)}% ≥ max ${maxSoc}% — returning to TOU`
+          : `Price ${importPrice.toFixed(2)} c/kWh > threshold — returning to TOU`;
+        logEntry.cmdResult = await consumerSetMode(2);
       }
-      const modeResult = await consumerSetMode(2);  // 2 = Time of Use
-      logEntry.cmdResult = modeResult;
     }
 
   } catch (err) {
